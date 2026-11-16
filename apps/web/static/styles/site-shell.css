@@ -1,0 +1,36 @@
+/* Served from /static — not imported into Vite (bundled CSS rewrites url() paths). */
+
+@font-face {
+	font-family: 'Quicksand';
+	src: url('/fonts/Quicksand.ttf');
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Inter';
+	src: url('/fonts/Inter-VariableFont_slnt,wght.ttf');
+	font-display: swap;
+}
+
+body.site-shell::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	/* Packs set --site-background (url(...)); core falls back to a gradient. */
+	background-image: var(
+		--site-background,
+		radial-gradient(ellipse at top, #2a3350 0%, #141a28 55%, #0b0e12 100%)
+	);
+	background-size: cover;
+	background-position: top center;
+	background-repeat: no-repeat;
+	background-attachment: fixed;
+	pointer-events: none;
+}
+
+@media (min-width: 768px) {
+	body.site-shell::before {
+		background-size: 100%;
+	}
+}

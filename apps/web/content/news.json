@@ -1,0 +1,24 @@
+{
+	"gamenews": [
+		{
+			"id": 1,
+			"index": 1,
+			"category": "GAME CONTENTS",
+			"type": "GROUP HEADER",
+			"headline": "Getting started",
+			"message": "Getting started",
+			"publishdate": 1763251200
+		},
+		{
+			"id": 2,
+			"index": 2,
+			"category": "GAME CONTENTS",
+			"type": "REGULAR",
+			"groupheaderid": 1,
+			"headline": "Welcome",
+			"message": "<p>Welcome! Publish news from the admin panel to replace these defaults.</p>",
+			"publishdate": 1763251201,
+			"isread": false
+		}
+	]
+}

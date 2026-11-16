@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton-svelte';
+@import './theme.css';
+
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+	/* Tailwind 3 defaults the markup was written against. */
+	*,
+	::after,
+	::before,
+	::backdrop,
+	::file-selector-button {
+		border-color: var(--color-gray-200, currentcolor);
+	}
+
+	button:not(:disabled),
+	[role='button']:not(:disabled) {
+		cursor: pointer;
+	}
+}
+
+@layer components {
+	.prose {
+		--tw-prose-bullets: var(--color-slate-800);
+		--tw-prose-invert-bullets: var(--color-slate-200);
+	}
+
+	.table-hover tbody tr:hover {
+		@apply bg-primary-500/10;
+	}
+
+	.card-hover {
+		@apply transition-transform duration-150 hover:scale-[1.01] hover:shadow-xl;
+	}
+
+	.list-nav ul {
+		@apply flex flex-col gap-1;
+	}
+
+	.list-nav a,
+	.list-nav button {
+		@apply flex w-full items-center gap-2 rounded-base px-4 py-2 transition-colors hover:bg-primary-500/10;
+	}
+}

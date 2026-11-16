@@ -1,0 +1,1039 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model AccountBanHistory {
+  id         Int      @id @default(autoincrement())
+  account_id Int      @db.UnsignedInt
+  reason     String   @db.VarChar(255)
+  banned_at  BigInt
+  expired_at BigInt
+  banned_by  Int
+  accounts   Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade, map: "account_bans_history_account_fk")
+  players    Players  @relation(fields: [banned_by], references: [id], onDelete: Cascade, map: "account_bans_history_player_fk")
+
+  @@index([account_id], map: "account_id")
+  @@index([banned_by], map: "banned_by")
+  @@map("account_ban_history")
+}
+
+model AccountBans {
+  account_id Int      @id @db.UnsignedInt
+  reason     String   @db.VarChar(255)
+  banned_at  BigInt
+  expires_at BigInt
+  banned_by  Int
+  accounts   Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade, map: "account_bans_account_fk")
+  players    Players  @relation(fields: [banned_by], references: [id], onDelete: Cascade, map: "account_bans_player_fk")
+
+  @@index([banned_by], map: "banned_by")
+  @@map("account_bans")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model AccountViplist {
+  account_id  Int      @db.UnsignedInt
+  player_id   Int
+  description String   @default("") @db.VarChar(128)
+  icon        Int      @default(0) @db.UnsignedTinyInt
+  notify      Boolean  @default(false)
+  accounts    Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "account_viplist_account_fk")
+  players     Players  @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "account_viplist_player_fk")
+
+  @@unique([account_id, player_id], map: "account_viplist_unique")
+  @@index([account_id], map: "account_id")
+  @@index([player_id], map: "player_id")
+  @@map("account_viplist")
+}
+
+model Accounts {
+  id                   Int                   @id @default(autoincrement()) @db.UnsignedInt
+  name                 String                @unique(map: "accounts_unique") @default(cuid()) @db.VarChar(32)
+  password             String                @db.Text
+  email                String                @unique(map: "accounts_email_unique") @db.VarChar(255)
+  premdays             Int                   @default(0)
+  lastday              Int                   @default(0) @db.UnsignedInt
+  type                 Int                   @default(1) @db.UnsignedTinyInt
+  coins                Int                   @default(0) @db.UnsignedInt
+  coins_transferable   Int                   @default(0) @db.UnsignedInt
+  tournament_coins     Int                   @default(0) @db.UnsignedInt
+  recruiter            Int?                  @default(0)
+  is_verified          Boolean               @default(false)
+  token_secret         String?               @db.VarChar(255)
+  creation             Int                   @default(0)
+  premdays_purchased   Int                   @default(0)
+  referred_by          Int?                  @db.UnsignedInt
+  referral_rewarded_at DateTime?
+  account_ban_history  AccountBanHistory[]
+  account_bans         AccountBans?
+  gameAccountSessions  GameAccountSessions[]
+  account_viplist      AccountViplist[]
+  coins_transactions   CoinsTransactions[]
+  players              Players[]
+  backupCodes          AccountBackupCodes[]
+  coinOrders           CoinOrders[]
+  emailVerifications   EmailVerification[]
+  passwordReset        PasswordReset?
+  accountSessions      AccountSessions[]
+  deviceSessions       DeviceSessions[]
+  bootstrapCodes       BootstrapCodes[]
+  store_history        StoreHistory[]
+  bazaarAuctionsSold   CharBazaarAuction[]   @relation("BazaarSeller")
+  bazaarAuctionsBought CharBazaarAuction[]   @relation("BazaarBuyer")
+  bazaarBids           CharBazaarBid[]
+  bazaarHighBids       CharBazaarAuction[]   @relation("BazaarCurrentBidder")
+  referrer             Accounts?             @relation("AccountReferrals", fields: [referred_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  referrals            Accounts[]            @relation("AccountReferrals")
+
+  @@index([referred_by], map: "accounts_referred_by_fkey")
+  @@map("accounts")
+}
+
+model BoostedBoss {
+  looktypeEx Int     @default(0)
+  looktype   Int     @default(136)
+  lookfeet   Int     @default(0)
+  looklegs   Int     @default(0)
+  lookhead   Int     @default(0)
+  lookbody   Int     @default(0)
+  lookaddons Int     @default(0)
+  lookmount  Int?    @default(0)
+  date       String  @id @default("") @db.VarChar(250)
+  boostname  String? @db.Text
+  raceid     String  @default("") @db.VarChar(250)
+
+  @@map("boosted_boss")
+}
+
+model BoostedCreature {
+  looktype   Int     @default(136)
+  lookfeet   Int     @default(0)
+  looklegs   Int     @default(0)
+  lookhead   Int     @default(0)
+  lookbody   Int     @default(0)
+  lookaddons Int     @default(0)
+  lookmount  Int?    @default(0)
+  date       String  @id @default("") @db.VarChar(250)
+  boostname  String? @db.Text
+  raceid     String  @default("") @db.VarChar(250)
+
+  @@map("boosted_creature")
+}
+
+model CoinsTransactions {
+  id          Int       @id @default(autoincrement()) @db.UnsignedInt
+  account_id  Int       @db.UnsignedInt
+  type        Int       @db.UnsignedTinyInt
+  amount      Int       @db.UnsignedInt
+  description String    @db.VarChar(3500)
+  timestamp   DateTime? @default(now()) @db.Timestamp(0)
+  coin_type   Int       @default(1) @db.UnsignedTinyInt
+  account     Accounts  @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "coins_transactions_account_fk")
+
+  @@index([account_id], map: "account_id")
+  @@map("coins_transactions")
+}
+
+model DailyRewardHistory {
+  id          Int     @id @default(autoincrement())
+  daystreak   Int     @default(0) @db.SmallInt
+  player_id   Int
+  timestamp   Int
+  description String? @db.Text
+  players     Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "daily_reward_history_player_fk")
+
+  @@index([player_id], map: "player_id")
+  @@map("daily_reward_history")
+}
+
+model ForgeHistory {
+  id           Int       @id @default(autoincrement())
+  player_id    Int
+  action_type  Int       @default(0)
+  description  String    @db.Text
+  is_success   Int       @default(0) @db.TinyInt
+  bonus        Int       @default(0) @db.TinyInt
+  done_at      BigInt
+  done_at_date DateTime? @default(now()) @db.DateTime(0)
+  cost         BigInt    @default(0) @db.UnsignedBigInt
+  gained       BigInt    @default(0) @db.UnsignedBigInt
+  players      Players   @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "forge_history_ibfk_1")
+
+  @@index([player_id], map: "player_id")
+  @@map("forge_history")
+}
+
+model GlobalStorage {
+  key   String @unique(map: "global_storage_unique") @db.VarChar(32)
+  value String @db.Text
+
+  @@map("global_storage")
+}
+
+model Worlds {
+  id          Int      @id @default(autoincrement()) @db.UnsignedInt
+  name        String   @unique(map: "worlds_unique") @db.VarChar(80)
+  type        String   @db.VarChar(20)
+  motd        String   @default("") @db.VarChar(255)
+  location    String   @db.VarChar(20)
+  ip          String   @db.VarChar(15)
+  port        Int      @db.UnsignedInt
+  port_status Int      @db.UnsignedInt
+  creation    Int      @default(0)
+  houses      Houses[]
+
+  @@map("worlds")
+}
+
+model GuildInvites {
+  player_id Int     @default(0)
+  guild_id  Int     @default(0)
+  date      Int
+  guild     Guilds  @relation(fields: [guild_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "guild_invites_guild_fk")
+  player    Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "guild_invites_player_fk")
+
+  @@id([player_id, guild_id])
+  @@index([guild_id], map: "guild_id")
+  @@map("guild_invites")
+}
+
+model GuildMembership {
+  player_id Int        @id
+  guild_id  Int
+  rank_id   Int
+  nick      String     @default("") @db.VarChar(15)
+  guild     Guilds     @relation(fields: [guild_id], references: [id], onDelete: Cascade, map: "guild_membership_guild_fk")
+  player    Players    @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "guild_membership_player_fk")
+  rank      GuildRanks @relation(fields: [rank_id], references: [id], onDelete: Cascade, map: "guild_membership_rank_fk")
+
+  @@index([guild_id], map: "guild_id")
+  @@index([rank_id], map: "rank_id")
+  @@map("guild_membership")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model GuildRanks {
+  id               Int               @id @default(autoincrement())
+  guild_id         Int
+  name             String            @db.VarChar(255)
+  level            Int
+  order            Int               @default(0)
+  guild_membership GuildMembership[]
+  guilds           Guilds            @relation(fields: [guild_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "guild_ranks_fk")
+
+  @@index([guild_id], map: "guild_id")
+  @@map("guild_ranks")
+}
+
+model GuildWars {
+  id             Int            @id @default(autoincrement())
+  guild1         Int            @default(0)
+  guild2         Int            @default(0)
+  name1          String         @db.VarChar(255)
+  name2          String         @db.VarChar(255)
+  status         Int            @default(0) @db.TinyInt
+  started        BigInt         @default(0)
+  ended          BigInt         @default(0)
+  guildwar_kills GuildwarKills?
+
+  @@index([guild1], map: "guild1")
+  @@index([guild2], map: "guild2")
+  @@map("guild_wars")
+}
+
+model Guilds {
+  id               Int               @id @default(autoincrement())
+  level            Int               @default(1)
+  name             String            @unique(map: "guilds_name_unique") @db.VarChar(255)
+  ownerid          Int               @unique(map: "guilds_owner_unique")
+  creationdata     Int
+  motd             String            @default("") @db.VarChar(255)
+  residence        Int               @default(0)
+  balance          BigInt            @default(0) @db.UnsignedBigInt
+  points           Int               @default(0)
+  created_at       DateTime          @default(now()) @db.DateTime(0)
+  description      String?           @db.Text
+  image_url        String?
+  guild_invites    GuildInvites[]
+  guild_membership GuildMembership[]
+  guild_ranks      GuildRanks[]
+  owner            Players           @relation(fields: [ownerid], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "guilds_ownerid_fk")
+
+  @@map("guilds")
+}
+
+model GuildwarKills {
+  id          Int       @id @default(autoincrement())
+  killer      String    @db.VarChar(50)
+  target      String    @db.VarChar(50)
+  killerguild Int       @default(0)
+  targetguild Int       @default(0)
+  warid       Int       @unique(map: "guildwar_kills_unique") @default(0)
+  time        BigInt
+  guild_wars  GuildWars @relation(fields: [warid], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "guildwar_kills_warid_fk")
+
+  @@index([warid], map: "warid")
+  @@map("guildwar_kills")
+}
+
+model HouseLists {
+  house_id Int
+  listid   Int
+  version  BigInt @default(0)
+  list     String @db.Text
+  world_id Int    @default(1) @db.UnsignedInt
+
+  @@id([house_id, listid])
+  @@index([version], map: "version")
+  @@index([house_id], map: "house_id_index")
+  @@map("house_lists")
+}
+
+/// Crystal `schema.sql` — composite PK (`id`, `world_id`); auction columns differ from legacy TFS.
+model Houses {
+  id              Int
+  world_id        Int      @default(1) @db.UnsignedInt
+  owner           Int
+  new_owner       Int      @default(-1)
+  paid            Int      @default(0) @db.UnsignedInt
+  warnings        Int      @default(0)
+  name            String   @db.VarChar(255)
+  rent            Int      @default(0)
+  town_id         Int      @default(0)
+  size            Int      @default(0)
+  guildid         Int?
+  beds            Int      @default(0)
+  bidder          Int      @default(0)
+  bidder_name     String   @default("") @db.VarChar(255)
+  highest_bid     Int      @default(0)
+  internal_bid    Int      @default(0)
+  bid_end_date    Int      @default(0)
+  state           Int      @default(0) @db.UnsignedSmallInt
+  transfer_status Boolean? @default(false)
+  worlds          Worlds   @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "houses_worlds_fk")
+
+  @@id([id, world_id])
+  @@index([owner], map: "owner")
+  @@index([town_id], map: "town_id")
+  @@map("houses")
+}
+
+model IPBans {
+  ip         Int     @id
+  reason     String  @db.VarChar(255)
+  banned_at  BigInt
+  expires_at BigInt
+  banned_by  Int
+  players    Players @relation(fields: [banned_by], references: [id], onDelete: Cascade, map: "ip_bans_players_fk")
+
+  @@index([banned_by], map: "banned_by")
+  @@map("ip_bans")
+}
+
+model MarketHistory {
+  id         Int     @id @default(autoincrement())
+  player_id  Int
+  sale       Boolean @default(false)
+  itemtype   Int     @db.UnsignedInt
+  amount     Int     @db.UnsignedSmallInt
+  price      BigInt  @default(0) @db.UnsignedBigInt
+  expires_at BigInt  @db.UnsignedBigInt
+  inserted   BigInt  @db.UnsignedBigInt
+  state      Int     @db.UnsignedTinyInt
+  tier       Int     @default(0) @db.UnsignedTinyInt
+  players    Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "market_history_players_fk")
+
+  @@index([player_id, sale], map: "player_id")
+  @@map("market_history")
+}
+
+model MarketOffers {
+  id        Int     @id @default(autoincrement())
+  player_id Int
+  sale      Boolean @default(false)
+  itemtype  Int     @db.UnsignedInt
+  amount    Int     @db.UnsignedSmallInt
+  created   BigInt  @db.UnsignedBigInt
+  anonymous Boolean @default(false)
+  price     BigInt  @default(0) @db.UnsignedBigInt
+  tier      Int     @default(0) @db.UnsignedTinyInt
+  players   Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "market_offers_players_fk")
+
+  @@index([created], map: "created")
+  @@index([player_id], map: "player_id")
+  @@index([sale, itemtype], map: "sale")
+  @@map("market_offers")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model PlayerBosstiary {
+  player_id     Int
+  bossIdSlotOne Int   @default(0)
+  bossIdSlotTwo Int   @default(0)
+  removeTimes   Int   @default(1)
+  tracker       Bytes @db.Blob
+
+  @@unique([player_id], map: "player_bosstiary_unique")
+  @@map("player_bosstiary")
+}
+
+model PlayerCharms {
+  player_guid      Int
+  charm_points     String?  @db.VarChar(250)
+  charm_expansion  Boolean?
+  rune_wound       Int?
+  rune_enflame     Int?
+  rune_poison      Int?
+  rune_freeze      Int?
+  rune_zap         Int?
+  rune_curse       Int?
+  rune_cripple     Int?
+  rune_parry       Int?
+  rune_dodge       Int?
+  rune_adrenaline  Int?
+  rune_numb        Int?
+  rune_cleanse     Int?
+  rune_bless       Int?
+  rune_scavenge    Int?
+  rune_gut         Int?
+  rune_low_blow    Int?
+  rune_divine      Int?
+  rune_vamp        Int?
+  rune_void        Int?
+  UsedRunesBit     String?  @db.VarChar(250)
+  UnlockedRunesBit String?  @db.VarChar(250)
+  tracker_list     Bytes?   @map("tracker list") @db.Blob
+
+  @@unique([player_guid], map: "player_charms_unique")
+  @@map("player_charms")
+}
+
+model PlayerDeaths {
+  player_id              Int
+  time                   BigInt  @default(0) @db.UnsignedBigInt
+  level                  Int     @default(1)
+  killed_by              String  @db.VarChar(255)
+  is_player              Boolean @default(true)
+  mostdamage_by          String  @db.VarChar(100)
+  mostdamage_is_player   Boolean @default(false)
+  unjustified            Boolean @default(false)
+  mostdamage_unjustified Boolean @default(false)
+  players                Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "player_deaths_players_fk")
+
+  @@unique([player_id, time], map: "player_deaths_unique")
+  @@index([killed_by], map: "killed_by")
+  @@index([mostdamage_by], map: "mostdamage_by")
+  @@index([player_id], map: "player_id")
+  @@map("player_deaths")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model PlayerDepotitems {
+  player_id  Int
+  sid        Int
+  pid        Int     @default(0)
+  itemtype   Int     @default(0)
+  count      Int     @default(0)
+  attributes Bytes   @db.Blob
+  players    Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "player_depotitems_players_fk")
+
+  @@unique([player_id, sid], map: "player_depotitems_unique")
+  @@map("player_depotitems")
+}
+
+model PlayerHirelings {
+  id        Int     @id @default(autoincrement())
+  player_id Int
+  name      String? @db.VarChar(255)
+  active    Int     @default(0) @db.UnsignedTinyInt
+  sex       Int     @default(0) @db.UnsignedTinyInt
+  posx      Int     @default(0)
+  posy      Int     @default(0)
+  posz      Int     @default(0)
+  lookbody  Int     @default(0)
+  lookfeet  Int     @default(0)
+  lookhead  Int     @default(0)
+  looklegs  Int     @default(0)
+  looktype  Int     @default(136)
+  players   Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "player_hirelings_ibfk_1")
+
+  @@index([player_id], map: "player_id")
+  @@map("player_hirelings")
+}
+
+model PlayerInboxitems {
+  player_id  Int
+  sid        Int
+  pid        Int     @default(0)
+  itemtype   Int     @default(0)
+  count      Int     @default(0)
+  attributes Bytes   @db.Blob
+  players    Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "player_inboxitems_players_fk")
+
+  @@unique([player_id, sid], map: "player_inboxitems_unique")
+  @@map("player_inboxitems")
+}
+
+model PlayerItems {
+  player_id  Int     @default(0)
+  pid        Int     @default(0)
+  sid        Int     @default(0)
+  itemtype   Int     @default(0)
+  count      Int     @default(0)
+  attributes Bytes   @db.Blob
+  players    Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "player_items_players_fk")
+
+  @@id([player_id, pid, sid])
+  @@index([player_id], map: "player_id")
+  @@index([sid], map: "sid")
+  @@map("player_items")
+}
+
+model PlayerKills {
+  player_id Int
+  time      BigInt  @default(0) @db.UnsignedBigInt
+  target    Int
+  unavenged Boolean @default(false)
+
+  @@unique([player_id, time, target], map: "player_kills_unique")
+  @@map("player_kills")
+}
+
+model PlayerMisc {
+  player_id Int
+  info      Bytes @db.Blob
+
+  @@unique([player_id], map: "player_misc_unique")
+  @@map("player_misc")
+}
+
+model PlayerNamelocks {
+  player_id                                       Int     @unique(map: "player_namelocks_unique")
+  reason                                          String  @db.VarChar(255)
+  namelocked_at                                   BigInt
+  namelocked_by                                   Int
+  players_player_namelocks_namelocked_byToplayers Players @relation("player_namelocks_namelocked_byToplayers", fields: [namelocked_by], references: [id], onDelete: Cascade, map: "player_namelocks_players2_fk")
+  players_player_namelocks_player_idToplayers     Players @relation("player_namelocks_player_idToplayers", fields: [player_id], references: [id], onDelete: Cascade, map: "player_namelocks_players_fk")
+
+  @@index([namelocked_by], map: "namelocked_by")
+  @@map("player_namelocks")
+}
+
+model PlayerPrey {
+  player_id        Int
+  slot             Boolean
+  state            Boolean
+  raceid           String  @db.VarChar(250)
+  option           Boolean
+  bonus_type       Boolean
+  bonus_rarity     Boolean
+  bonus_percentage String  @db.VarChar(250)
+  bonus_time       String  @db.VarChar(250)
+  free_reroll      BigInt
+  monster_list     Bytes?  @db.Blob
+  id               Int     @id @default(autoincrement())
+
+  @@map("player_prey")
+}
+
+model PlayerRewards {
+  player_id  Int
+  sid        Int
+  pid        Int     @default(0)
+  itemtype   Int     @default(0)
+  count      Int     @default(0)
+  attributes Bytes   @db.Blob
+  players    Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "player_rewards_players_fk")
+
+  @@unique([player_id, sid], map: "player_rewards_unique")
+  @@map("player_rewards")
+}
+
+model PlayerSpells {
+  player_id Int
+  name      String  @db.VarChar(255)
+  id        Int     @id @default(autoincrement())
+  players   Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "player_spells_players_fk")
+
+  @@index([player_id], map: "player_id")
+  @@map("player_spells")
+}
+
+model PlayerStash {
+  player_id  Int
+  item_id    Int
+  item_count Int
+  id         Int @id @default(autoincrement())
+
+  @@map("player_stash")
+}
+
+model PlayerStorage {
+  player_id Int     @default(0)
+  key       Int     @default(0) @db.UnsignedInt
+  value     Int     @default(0)
+  players   Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "player_storage_players_fk")
+
+  @@id([player_id, key])
+  @@map("player_storage")
+}
+
+model PlayerTaskhunt {
+  player_id     Int
+  slot          Boolean
+  state         Boolean
+  raceid        String  @db.VarChar(250)
+  upgrade       Boolean
+  rarity        Boolean
+  kills         String  @db.VarChar(250)
+  disabled_time BigInt
+  free_reroll   BigInt
+  monster_list  Bytes?  @db.Blob
+  id            Int     @id @default(autoincrement())
+
+  @@map("player_taskhunt")
+}
+
+model Players {
+  id                                                Int                  @id @default(autoincrement())
+  name                                              String               @unique(map: "players_unique") @db.VarChar(255)
+  group_id                                          Int                  @default(1)
+  account_id                                        Int                  @default(0) @db.UnsignedInt
+  level                                             Int                  @default(1)
+  vocation                                          Int                  @default(0)
+  health                                            Int                  @default(150)
+  healthmax                                         Int                  @default(150)
+  experience                                        BigInt               @default(0)
+  lookbody                                          Int                  @default(0)
+  lookfeet                                          Int                  @default(0)
+  lookhead                                          Int                  @default(0)
+  looklegs                                          Int                  @default(0)
+  looktype                                          Int                  @default(136)
+  lookaddons                                        Int                  @default(0)
+  maglevel                                          Int                  @default(0)
+  mana                                              Int                  @default(0)
+  manamax                                           Int                  @default(0)
+  manaspent                                         BigInt               @default(0) @db.UnsignedBigInt
+  soul                                              Int                  @default(0) @db.UnsignedInt
+  town_id                                           Int                  @default(1)
+  world_id                                          Int                  @default(1) @db.UnsignedInt
+  posx                                              Int                  @default(0)
+  posy                                              Int                  @default(0)
+  posz                                              Int                  @default(0)
+  conditions                                        Bytes                @db.Blob
+  cap                                               Int                  @default(0)
+  sex                                               Int                  @default(0)
+  lastlogin                                         BigInt               @default(0) @db.UnsignedBigInt
+  lastip                                            Int                  @default(0) @db.UnsignedInt
+  save                                              Boolean              @default(true)
+  skull                                             Boolean              @default(false)
+  skulltime                                         BigInt               @default(0)
+  lastlogout                                        BigInt               @default(0) @db.UnsignedBigInt
+  blessings                                         Int                  @default(0) @db.TinyInt
+  blessings1                                        Int                  @default(0) @db.TinyInt
+  blessings2                                        Int                  @default(0) @db.TinyInt
+  blessings3                                        Int                  @default(0) @db.TinyInt
+  blessings4                                        Int                  @default(0) @db.TinyInt
+  blessings5                                        Int                  @default(0) @db.TinyInt
+  blessings6                                        Int                  @default(0) @db.TinyInt
+  blessings7                                        Int                  @default(0) @db.TinyInt
+  blessings8                                        Int                  @default(0) @db.TinyInt
+  onlinetime                                        Int                  @default(0)
+  deletion                                          BigInt               @default(0)
+  balance                                           BigInt               @default(0) @db.UnsignedBigInt
+  offlinetraining_time                              Int                  @default(43200) @db.UnsignedSmallInt
+  offlinetraining_skill                             Int                  @default(-1) @db.TinyInt
+  stamina                                           Int                  @default(2520) @db.UnsignedSmallInt
+  skill_fist                                        Int                  @default(10) @db.UnsignedInt
+  skill_fist_tries                                  BigInt               @default(0) @db.UnsignedBigInt
+  skill_club                                        Int                  @default(10) @db.UnsignedInt
+  skill_club_tries                                  BigInt               @default(0) @db.UnsignedBigInt
+  skill_sword                                       Int                  @default(10) @db.UnsignedInt
+  skill_sword_tries                                 BigInt               @default(0) @db.UnsignedBigInt
+  skill_axe                                         Int                  @default(10) @db.UnsignedInt
+  skill_axe_tries                                   BigInt               @default(0) @db.UnsignedBigInt
+  skill_dist                                        Int                  @default(10) @db.UnsignedInt
+  skill_dist_tries                                  BigInt               @default(0) @db.UnsignedBigInt
+  skill_shielding                                   Int                  @default(10) @db.UnsignedInt
+  skill_shielding_tries                             BigInt               @default(0) @db.UnsignedBigInt
+  skill_fishing                                     Int                  @default(10) @db.UnsignedInt
+  skill_fishing_tries                               BigInt               @default(0) @db.UnsignedBigInt
+  skill_critical_hit_chance                         Int                  @default(0) @db.UnsignedInt
+  skill_critical_hit_chance_tries                   BigInt               @default(0) @db.UnsignedBigInt
+  skill_critical_hit_damage                         Int                  @default(0) @db.UnsignedInt
+  skill_critical_hit_damage_tries                   BigInt               @default(0) @db.UnsignedBigInt
+  skill_life_leech_chance                           Int                  @default(0) @db.UnsignedInt
+  skill_life_leech_chance_tries                     BigInt               @default(0) @db.UnsignedBigInt
+  skill_life_leech_amount                           Int                  @default(0) @db.UnsignedInt
+  skill_life_leech_amount_tries                     BigInt               @default(0) @db.UnsignedBigInt
+  skill_mana_leech_chance                           Int                  @default(0) @db.UnsignedInt
+  skill_mana_leech_chance_tries                     BigInt               @default(0) @db.UnsignedBigInt
+  skill_mana_leech_amount                           Int                  @default(0) @db.UnsignedInt
+  skill_mana_leech_amount_tries                     BigInt               @default(0) @db.UnsignedBigInt
+  skill_criticalhit_chance                          BigInt               @default(0) @db.UnsignedBigInt
+  skill_criticalhit_damage                          BigInt               @default(0) @db.UnsignedBigInt
+  skill_lifeleech_chance                            BigInt               @default(0) @db.UnsignedBigInt
+  skill_lifeleech_amount                            BigInt               @default(0) @db.UnsignedBigInt
+  skill_manaleech_chance                            BigInt               @default(0) @db.UnsignedBigInt
+  skill_manaleech_amount                            BigInt               @default(0) @db.UnsignedBigInt
+  manashield                                        Int                  @default(0) @db.UnsignedSmallInt
+  max_manashield                                    Int                  @default(0) @db.UnsignedSmallInt
+  xpboost_stamina                                   Int?                 @db.UnsignedSmallInt
+  xpboost_value                                     Int?                 @db.UnsignedTinyInt
+  marriage_status                                   BigInt               @default(0) @db.UnsignedBigInt
+  marriage_spouse                                   Int                  @default(-1)
+  bonus_rerolls                                     BigInt               @default(0)
+  prey_wildcard                                     BigInt               @default(0)
+  task_points                                       BigInt               @default(0)
+  quickloot_fallback                                Boolean?             @default(false)
+  lookmountbody                                     Int                  @default(0) @db.UnsignedTinyInt
+  lookmountfeet                                     Int                  @default(0) @db.UnsignedTinyInt
+  lookmounthead                                     Int                  @default(0) @db.UnsignedTinyInt
+  lookmountlegs                                     Int                  @default(0) @db.UnsignedTinyInt
+  lookfamiliarstype                                 Int                  @default(0) @db.UnsignedInt
+  isreward                                          Boolean              @default(true)
+  istutorial                                        Boolean              @default(false)
+  forge_dusts                                       BigInt               @default(0)
+  forge_dust_level                                  BigInt               @default(100)
+  randomize_mount                                   Boolean              @default(false)
+  boss_points                                       Int                  @default(0)
+  is_main                                           Boolean              @default(false)
+  pronoun                                           Int                  @default(0)
+  charbazaar                                        Boolean              @default(false)
+  account_ban_history                               AccountBanHistory[]
+  account_bans                                      AccountBans[]
+  account_viplist                                   AccountViplist[]
+  daily_reward_history                              DailyRewardHistory[]
+  forge_history                                     ForgeHistory[]
+  guild_invites                                     GuildInvites[]
+  guild_membership                                  GuildMembership?
+  owned_guild                                       Guilds?
+  ip_bans                                           IPBans[]
+  market_history                                    MarketHistory[]
+  market_offers                                     MarketOffers[]
+  deaths                                            PlayerDeaths[]
+  depotitems                                        PlayerDepotitems[]
+  hirelings                                         PlayerHirelings[]
+  inboxitems                                        PlayerInboxitems[]
+  items                                             PlayerItems[]
+  namelocks_player_namelocks_namelocked_byToplayers PlayerNamelocks[]    @relation("player_namelocks_namelocked_byToplayers")
+  namelocks_player_namelocks_player_idToplayers     PlayerNamelocks?     @relation("player_namelocks_player_idToplayers")
+  rewards                                           PlayerRewards[]
+  spells                                            PlayerSpells[]
+  storage                                           PlayerStorage[]
+  player_wheeldata                                  PlayerWheeldata?
+  account                                           Accounts             @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "players_account_fk")
+  online                                            PlayerOnline?
+  posted_articles                                   News[]
+  settings                                          PlayerSettings?
+  bazaarAuctions                                    CharBazaarAuction[]
+
+  @@index([account_id], map: "account_id")
+  @@index([vocation], map: "vocation")
+  @@index([deletion], map: "deletion")
+  @@map("players")
+}
+
+model PlayerOnline {
+  player_id Int     @id
+  player    Players @relation(fields: [player_id], references: [id])
+
+  @@map("players_online")
+}
+
+model ServerConfig {
+  config String @id @db.VarChar(50)
+  value  String @default("") @db.VarChar(256)
+
+  @@map("server_config")
+}
+
+model StoreHistory {
+  id          Int      @id @default(autoincrement())
+  account_id  Int      @db.UnsignedInt
+  mode        Int      @default(0) @db.SmallInt
+  description String   @db.VarChar(3500)
+  coin_type   Boolean  @default(false)
+  coin_amount Int
+  time        BigInt   @db.UnsignedBigInt
+  timestamp   Int      @default(0)
+  coins       Int      @default(0)
+  accounts    Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "store_history_account_fk")
+
+  @@index([account_id], map: "account_id")
+  @@map("store_history")
+}
+
+model TileStore {
+  house_id Int
+  data     Bytes
+  world_id Int    @default(1) @db.UnsignedInt
+
+  @@id([house_id, world_id])
+  @@map("tile_store")
+}
+
+model Towns {
+  id      Int     @id @default(autoincrement())
+  name    String  @unique(map: "name") @db.VarChar(255)
+  posx    Int     @default(0)
+  posy    Int     @default(0)
+  posz    Int     @default(0)
+  starter Boolean @default(false)
+
+  @@map("towns")
+}
+
+model GameAccountSessions {
+  id         String   @id @default(cuid())
+  account_id Int      @db.UnsignedInt
+  expires    BigInt   @db.UnsignedBigInt
+  accounts   Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([account_id], map: "account_sessions_account_id_fkey")
+  @@map("account_sessions")
+}
+
+model PlayerWheeldata {
+  player_id Int     @id
+  slot      Bytes   @db.Blob
+  player    Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "player_wheeldata_players_fk")
+
+  @@index([player_id], map: "player_id")
+  @@map("player_wheeldata")
+}
+
+model kv_store {
+  key_name  String @id
+  timestamp BigInt
+  value     Bytes
+}
+
+model AccountBackupCodes {
+  id         String   @id @default(cuid())
+  account_id Int      @db.UnsignedInt
+  code       String   @db.VarChar(255)
+  used       Boolean  @default(false)
+  account    Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([account_id], map: "qtcaac_account_backup_codes_account_id_fkey")
+  @@map("qtcaac_account_backup_codes")
+}
+
+model AccountSessions {
+  id         String   @id @default(cuid())
+  expires    BigInt   @db.UnsignedBigInt
+  account_id Int      @db.UnsignedInt
+  account    Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id], map: "qtcaac_sessions_account_id_fkey")
+  @@map("qtcaac_sessions")
+}
+
+/// Long-lived launcher login. Only the sha256 of the token is stored.
+model DeviceSessions {
+  id           String   @id @default(cuid())
+  token_hash   String   @unique @db.Char(64)
+  account_id   Int      @db.UnsignedInt
+  name         String   @db.VarChar(100)
+  created_at   DateTime @default(now()) @db.DateTime(0)
+  last_used_at DateTime @default(now()) @db.DateTime(0)
+  account      Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id], map: "qtcaac_device_sessions_account_id_fkey")
+  @@map("qtcaac_device_sessions")
+}
+
+/// Single-use login code. Only the sha256 is stored.
+/// purpose `play`: website/launcher → OTClient; `switch`: OTClient login → website/launcher session.
+model BootstrapCodes {
+  code_hash  String   @id @db.Char(64)
+  account_id Int      @db.UnsignedInt
+  expires    BigInt   @db.UnsignedBigInt
+  purpose    String   @default("play") @db.VarChar(16)
+  account    Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id], map: "qtcaac_bootstrap_codes_account_id_fkey")
+  @@index([expires])
+  @@map("qtcaac_bootstrap_codes")
+}
+
+model News {
+  id         String   @id @default(cuid())
+  published  Boolean  @default(false)
+  ticker     Boolean  @default(false)
+  /// CIP Compendium tab: MAJOR UPDATES | GAME CONTENTS | PLAYER GUIDE |
+  /// CLIENT FEATURES | USEFUL INFO | SUPPORT.
+  category   String   @default("MAJOR UPDATES") @db.VarChar(64)
+  title      String   @db.VarChar(255)
+  content    String   @db.Text
+  author_id  Int
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+  author     Players  @relation(fields: [author_id], references: [id])
+
+  @@index([author_id], map: "qtcaac_news_author_id_fkey")
+  @@index([published, category], map: "qtcaac_news_published_category_idx")
+  @@map("qtcaac_news")
+}
+
+model StaticPage {
+  id         String   @id @default(cuid())
+  slug       String   @unique
+  title      String   @db.VarChar(255)
+  content    String   @db.Text
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+  order      Int      @default(0)
+  hide       Boolean  @default(false)
+
+  @@map("qtcaac_static_pages")
+}
+
+model CoinOffers {
+  id       String  @id @default(cuid())
+  amount   Int     @default(0)
+  price    Decimal
+  currency String  @default("USD")
+
+  @@unique([amount, currency], map: "qtcaac_coin_offers_amount_currency_key")
+  @@map("qtcaac_coin_offers")
+}
+
+model CoinOrders {
+  id             String          @id @default(cuid())
+  status         CoinOrderStatus @default(PENDING)
+  account_id     Int             @db.UnsignedInt
+  price          Decimal
+  currency       String          @default("USD")
+  amount         Int             @default(0)
+  payment_method String          @default("stripe") @db.VarChar(32)
+  created_at     DateTime        @default(now())
+  updated_at     DateTime        @default(now()) @updatedAt
+  payment_token  String          @unique
+  account        Accounts        @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([account_id], map: "qtcaac_coin_orders_account_id_fkey")
+  @@map("qtcaac_coin_orders")
+}
+
+model CurrencyExchangeRates {
+  currency   String   @id
+  rate       Decimal
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("qtcaac_currency_exchange_rates")
+}
+
+model PasswordReset {
+  token      String   @id @default(cuid())
+  account_id Int      @unique @db.UnsignedInt
+  expires    DateTime
+  account    Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("qtcaac_password_resets")
+}
+
+model EmailVerification {
+  token      String   @id @default(cuid())
+  account_id Int      @db.UnsignedInt
+  expires    DateTime
+  new_email  String?  @db.VarChar(255)
+  created_at DateTime @default(now())
+  account    Accounts @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("qtcaac_email_verifications")
+}
+
+model PlayerSettings {
+  id             String  @id @default(cuid())
+  player_id      Int     @unique
+  hidden         Boolean @default(false)
+  show_skills    Boolean @default(true)
+  show_inventory Boolean @default(true)
+  comment        String? @db.Text
+  player         Players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([player_id], map: "player_id")
+  @@map("qtcaac_player_settings")
+}
+
+model Monsters {
+  id         Int    @id @default(autoincrement())
+  name       String @unique(map: "name") @db.VarChar(191)
+  lookbody   Int    @default(0)
+  lookfeet   Int    @default(0)
+  lookhead   Int    @default(0)
+  looklegs   Int    @default(0)
+  looktype   Int    @default(136)
+  lookaddons Int    @default(0)
+  lookmount  Int    @default(0)
+  looktypeex Int    @default(0)
+  raceid     Int    @default(0)
+
+  @@map("monsters")
+}
+
+enum CharBazaarStatus {
+  LISTED
+  SOLD
+  EXPIRED
+
+  @@map("qtcaac_char_bazaar_status")
+}
+
+model CharBazaarAuction {
+  id                        String           @id @default(cuid())
+  player_id                 Int
+  seller_account_id         Int              @db.UnsignedInt
+  buyer_account_id          Int?             @db.UnsignedInt
+  start_price               Int              @db.UnsignedInt
+  current_price             Int              @db.UnsignedInt
+  current_bidder_account_id Int?             @db.UnsignedInt
+  listed_at                 DateTime         @default(now())
+  ends_at                   DateTime
+  status                    CharBazaarStatus @default(LISTED)
+  create_fee                Int              @db.UnsignedInt
+  bid_fee                   Int              @db.UnsignedInt
+  tax_percent               Int              @db.UnsignedInt
+  player                    Players          @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  seller                    Accounts         @relation("BazaarSeller", fields: [seller_account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  buyer                     Accounts?        @relation("BazaarBuyer", fields: [buyer_account_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  currentBidder             Accounts?        @relation("BazaarCurrentBidder", fields: [current_bidder_account_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  bids                      CharBazaarBid[]
+
+  @@index([player_id], map: "qtcaac_char_bazaar_auctions_player_id_fkey")
+  @@index([seller_account_id], map: "qtcaac_char_bazaar_auctions_seller_fkey")
+  @@index([buyer_account_id], map: "qtcaac_char_bazaar_auctions_buyer_fkey")
+  @@index([current_bidder_account_id], map: "qtcaac_char_bazaar_auctions_bidder_fkey")
+  @@index([status, ends_at], map: "qtcaac_char_bazaar_auctions_status_ends")
+  @@map("qtcaac_char_bazaar_auctions")
+}
+
+model CharBazaarBid {
+  id         String            @id @default(cuid())
+  auction_id String
+  account_id Int               @db.UnsignedInt
+  amount     Int               @db.UnsignedInt
+  fee        Int               @db.UnsignedInt
+  created_at DateTime          @default(now())
+  auction    CharBazaarAuction @relation(fields: [auction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  account    Accounts          @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([auction_id], map: "qtcaac_char_bazaar_bids_auction_id_fkey")
+  @@index([account_id], map: "qtcaac_char_bazaar_bids_account_id_fkey")
+  @@map("qtcaac_char_bazaar_bids")
+}
+
+enum CoinOrderStatus {
+  PENDING
+  FAILED_ATTEMPT
+  COMPLETED
+  CANCELED
+
+  @@map("qtcaac_coin_order_status")
+}

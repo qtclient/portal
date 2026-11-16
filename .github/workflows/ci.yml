@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Prisma client
+        working-directory: apps/web
+        run: bunx prisma generate
+      - name: No build-time env imports
+        run: |
+          if grep -rnE "\\\$env/(static|dynamic)/(private|public)['\"]" apps packages --include=*.ts --include=*.js --include=*.svelte --exclude-dir=node_modules --exclude-dir=.svelte-kit --exclude-dir=build; then
+            echo "::error::Declare variables in apps/web/src/env.ts and import them from \$app/env/*"
+            exit 1
+          fi
+      - name: svelte-check
+        working-directory: apps/web
+        run: bun run check
+      - name: Unit tests
+        run: make test
+      - name: Build (core)
+        working-directory: apps/web
+        run: bun run build
+      - name: Build (example pack)
+        run: |
+          node scripts/pack.mjs apply examples/pack
+          cd apps/web && bun run check && bun run build

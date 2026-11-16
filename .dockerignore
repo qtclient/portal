@@ -1,0 +1,21 @@
+.git
+**/node_modules
+**/.svelte-kit
+**/build
+**/.env
+**/*.md
+docs
+**/__pycache__
+apps/web/outfits_anim
+apps/web/items
+apps/web/static/wasm
+apps/web/static/play
+apps/web/data
+# A pack is applied inside the image from `--build-context pack=<dir>` only.
+apps/web/.pack-applied
+apps/web/src/lib/pack
+apps/web/src/routes/(app)/(pack)
+apps/web/static/pack
+apps/web/content/pack
+apps/web/prisma/schema/pack
+apps/web/prisma/migrations/*_pack_*

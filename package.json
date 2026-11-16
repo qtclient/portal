@@ -1,0 +1,17 @@
+{
+	"name": "qtc-aac",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"scripts": {
+		"dev": "bun run --filter @qtc-aac/web dev",
+		"build": "bun run --filter @qtc-aac/web build",
+		"check": "bun run --filter '*' check",
+		"lint": "bun run --filter '*' lint",
+		"format": "bun run --filter '*' format",
+		"pack": "node scripts/pack.mjs"
+	}
+}

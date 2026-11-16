@@ -1,0 +1,98 @@
+/// Client crash reports (desktop Breakpad minidumps + /play WASM errors).
+model CrashReport {
+  id          String    @id @default(cuid())
+  created_at  DateTime  @default(now())
+  platform    String    @db.VarChar(32)
+  revision    String    @db.VarChar(64)
+  /// CIP `ReportType`: Full | Minimal; `wasm` for browser reports.
+  report_type String    @db.VarChar(16)
+  comment     String?   @db.Text
+  account_id  Int?      @db.UnsignedInt
+  ip_hash     String?   @db.Char(64)
+  /// Path relative to QTCAAC_TELEMETRY_DIR (minidump or JSON payload).
+  dump_path   String?   @db.VarChar(255)
+  dump_size   Int?
+  /// pending | symbolicated | unsymbolicated | failed
+  status      String    @default("pending") @db.VarChar(16)
+  signature   String?   @db.Char(40)
+  crash_type  String?   @db.VarChar(128)
+  /// Symbolicated crashing-thread frames (JSON array).
+  frames      Json?
+  metadata    Json?
+  group_id    String?
+  group       CrashGroup? @relation(fields: [group_id], references: [id], onDelete: SetNull)
+
+  @@index([created_at])
+  @@index([group_id])
+  @@index([status])
+  @@map("qtcaac_crash_reports")
+}
+
+model CrashGroup {
+  id            String        @id @default(cuid())
+  signature     String        @unique @db.Char(40)
+  title         String        @db.VarChar(255)
+  platform      String        @db.VarChar(32)
+  first_seen    DateTime      @default(now())
+  last_seen     DateTime      @default(now())
+  count         Int           @default(0)
+  last_revision String        @db.VarChar(64)
+  resolved      Boolean       @default(false)
+  note          String?       @db.Text
+  reports       CrashReport[]
+
+  @@index([last_seen])
+  @@map("qtcaac_crash_groups")
+}
+
+/// Uploaded debug symbols (Breakpad .sym or WASM source maps).
+model SymbolFile {
+  id          String   @id @default(cuid())
+  uploaded_at DateTime @default(now())
+  /// breakpad | sourcemap
+  kind        String   @db.VarChar(16)
+  /// Breakpad debug id, or the client revision for source maps.
+  debug_id    String   @db.VarChar(64)
+  code_file   String   @db.VarChar(255)
+  os          String?  @db.VarChar(16)
+  arch        String?  @db.VarChar(16)
+  path        String   @db.VarChar(512)
+  size        Int
+
+  @@unique([kind, debug_id, code_file])
+  @@map("qtcaac_symbol_files")
+}
+
+/// CIP TFPSHistoryUploader samples (`dataType: FPSHistory`).
+model FpsSample {
+  id          BigInt    @id @default(autoincrement())
+  created_at  DateTime  @default(now())
+  sampled_at  DateTime?
+  client_id   String?   @db.VarChar(64)
+  platform    String    @db.VarChar(32)
+  revision    String    @db.VarChar(64)
+  renderer    String    @db.VarChar(128)
+  average_fps Float
+  min_fps     Float
+  max_fps     Float
+
+  @@index([revision, renderer])
+  @@index([created_at])
+  @@map("qtcaac_fps_samples")
+}
+
+/// System survey payloads (hardware / OS / GPU) from hardwarereceiver.php.
+model SystemSurvey {
+  id         BigInt   @id @default(autoincrement())
+  created_at DateTime @default(now())
+  client_id  String?  @db.VarChar(64)
+  platform   String   @db.VarChar(32)
+  revision   String   @db.VarChar(64)
+  gpu        String?  @db.VarChar(255)
+  cpu        String?  @db.VarChar(255)
+  os         String?  @db.VarChar(255)
+  raw        Json
+
+  @@index([created_at])
+  @@map("qtcaac_system_surveys")
+}

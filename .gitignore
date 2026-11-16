@@ -1,0 +1,35 @@
+.DS_Store
+node_modules
+build/
+.svelte-kit/
+/package
+.env
+.env.*
+!.env.dist
+!.env.example
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+*.patch
+__pycache__/
+*.py[cod]
+*.pyo
+
+# CDN sprite caches (filled on demand from the qtclient asset slices)
+/apps/web/outfits_anim
+/apps/web/outfits_anim.tmp
+/apps/web/items
+/apps/web/items.tmp
+/apps/web/static/play
+/apps/web/static/wasm
+
+# Telemetry storage (dumps, symbols)
+/apps/web/data/
+
+# Applied product pack (scripts/pack.mjs) — never commit
+/apps/web/.pack-applied
+/apps/web/src/lib/pack/
+/apps/web/src/routes/(app)/(pack)/
+/apps/web/static/pack/
+/apps/web/content/pack/
+/apps/web/prisma/schema/pack/
+/apps/web/prisma/migrations/*_pack_*/

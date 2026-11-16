@@ -1,0 +1,167 @@
+@import '../../app.css';
+
+:root {
+	--theme-content-bg: color-mix(in srgb, var(--color-surface-100) 88%, #f4e8d0);
+	--theme-border: color-mix(in srgb, var(--color-secondary-700) 55%, #8b6914);
+	--theme-headline: var(--color-secondary-700);
+}
+
+.dark {
+	--theme-content-bg: color-mix(in srgb, var(--color-surface-900) 90%, #1a1208);
+	--theme-headline: var(--color-secondary-300);
+}
+
+.theme-box {
+	border: 1px solid color-mix(in srgb, var(--theme-border) 40%, transparent);
+	box-shadow: 0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset;
+}
+
+.content-box {
+	background: var(--theme-content-bg);
+	border: 1px solid color-mix(in srgb, var(--theme-border) 35%, transparent);
+	border-radius: 0.35rem;
+	padding: 1.25rem 1.5rem;
+}
+
+.content-box h1 {
+	color: var(--theme-headline);
+	font-family: 'Quicksand', ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+	@apply min-h-[100vh];
+}
+
+.main-content {
+	@apply relative z-0;
+}
+
+body {
+	@apply bg-cover md:bg-[100%] bg-fixed bg-no-repeat bg-top;
+	background-image:
+		radial-gradient(at 0% 0%, var(--color-tertiary-500) 0px, transparent 100%),
+		radial-gradient(at 98% 1%, var(--color-surface-800) 0px, transparent 100%),
+		linear-gradient(
+			0deg,
+			color-mix(in srgb, var(--color-tertiary-900) 90%, transparent) 0px,
+			transparent 100%
+		);
+}
+
+a[disabled='true'],
+buttoa[disabled='true'],
+button:disabled {
+	@apply opacity-50 cursor-not-allowed pointer-events-none;
+}
+
+.backdrop {
+	@apply fixed inset-0 z-0;
+	@apply w-full h-[100vh];
+	@apply backdrop-brightness-150;
+	@apply transition-all;
+}
+
+.dark .backdrop {
+	@apply backdrop-brightness-50;
+}
+
+@layer components {
+	.card.card-surface {
+		@apply bg-surface-300 dark:bg-surface-900;
+	}
+
+	.card.card-tertiary {
+		@apply bg-tertiary-500 dark:bg-tertiary-800 text-white;
+	}
+
+	.accordion-item .accordion-control {
+		@apply bg-tertiary-400 rounded-md px-2 py-1;
+	}
+
+	.accordion-panel .list-nav a {
+		@apply px-4 -mx-4 py-1;
+	}
+
+	.card-tertiary .accordion-panel .list-nav a:hover {
+		@apply bg-tertiary-400;
+	}
+
+	.accordion-panel {
+		@apply px-0;
+	}
+
+	.input-error {
+		@apply border-2 border-error-500;
+	}
+
+	.divider {
+		@apply border-t-2! border-secondary-900/30! my-2 -mx-8 rounded-full;
+	}
+
+	.table-wrap .table {
+		@apply rounded-none;
+	}
+
+	.table-wrap,
+	.data-table {
+		@apply rounded-container;
+		@apply ring-0 border-2 border-surface-600;
+	}
+
+	.table-wrap .table thead {
+		@apply bg-surface-500 dark:bg-surface-800;
+		@apply border-surface-500 dark:border-surface-800;
+	}
+
+	.table-wrap .table:not(.table-noeven) tbody,
+	.data-table {
+		@apply bg-surface-400 dark:bg-surface-700;
+	}
+
+	.table-wrap .table:not(.table-noeven) tbody > *:nth-child(even),
+	.data-row:nth-child(even) {
+		@apply bg-surface-500 dark:bg-surface-800;
+	}
+
+	.data-table {
+		@apply flex flex-col gap-0 items-center justify-center justify-items-center;
+	}
+	.data-row {
+		@apply flex flex-row items-stretch w-full;
+	}
+	.data-row dt,
+	.data-row dd {
+		@apply p-2;
+	}
+	.data-row dt {
+		@apply font-bold flex-1 text-right;
+	}
+	.data-row dd {
+		@apply flex-1;
+	}
+	.data-row:first-child {
+		@apply rounded-t-lg!;
+	}
+	.data-row:last-child {
+		@apply rounded-b-lg!;
+	}
+
+	.placeholder {
+		@apply bg-surface-400 dark:bg-surface-500;
+	}
+
+	.list-nav a:focus,
+	.list-nav button:focus,
+	.list-option:focus {
+		@apply text-primary-300;
+	}
+
+	:is(.dark .anchor) {
+		@apply text-primary-900;
+	}
+
+	.card-tertiary .anchor {
+		@apply text-primary-200 hover:text-primary-50;
+	}
+}

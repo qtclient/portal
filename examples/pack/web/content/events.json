@@ -1,0 +1,12 @@
+{
+	"events": [
+		{
+			"name": "Double XP",
+			"startdate": "1/1/2027",
+			"enddate": "1/3/2027",
+			"description": "Example event from the pack.",
+			"colors": { "colordark": "#2b3e50", "colorlight": "#3d5a73" },
+			"details": { "displaypriority": 5, "isseasonal": 0, "specialevent": 1 }
+		}
+	]
+}

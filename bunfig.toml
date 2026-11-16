@@ -1,0 +1,3 @@
+[install]
+# One root node_modules: the web image copies it as-is next to the build.
+linker = "hoisted"
