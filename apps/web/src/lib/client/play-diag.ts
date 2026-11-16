@@ -291,7 +291,10 @@ function watchResources(): void {
 				msg: event.message,
 				file: event.filename,
 				line: event.lineno,
-				stack: event.error instanceof Error ? event.error.stack?.slice(0, 1500) : undefined,
+				stack:
+					event.error instanceof Error
+						? event.error.stack?.slice(0, 1500)
+						: undefined,
 			});
 	});
 
@@ -317,27 +320,19 @@ function watchResources(): void {
 		flushNow();
 	});
 
-	try {
-		const po = new PerformanceObserver((list) => {
-			for (const entry of list.getEntries()) {
-				const r = entry as PerformanceResourceTiming;
-				// COEP/CORP blocks often land as transferSize 0 + duration 0.
-				if (
-					r.transferSize === 0 &&
-					r.decodedBodySize === 0 &&
-					r.duration === 0
-				) {
-					diagWarn('resource blocked/empty', {
-						url: shortUrl(r.name),
-						initiator: r.initiatorType,
-					});
-				}
+	const po = new PerformanceObserver((list) => {
+		for (const entry of list.getEntries()) {
+			const r = entry as PerformanceResourceTiming;
+			// COEP/CORP blocks often land as transferSize 0 + duration 0.
+			if (r.transferSize === 0 && r.decodedBodySize === 0 && r.duration === 0) {
+				diagWarn('resource blocked/empty', {
+					url: shortUrl(r.name),
+					initiator: r.initiatorType,
+				});
 			}
-		});
-		po.observe({ type: 'resource', buffered: true });
-	} catch {
-		/* Safari older */
-	}
+		}
+	});
+	po.observe({ type: 'resource', buffered: true });
 }
 
 /**
