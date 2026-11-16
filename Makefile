@@ -46,7 +46,7 @@ run: pack-apply
 		cd "$(WEB)" && bun run dev -- --host 127.0.0.1 --port 5173; \
 	fi
 
-migrate:
+migrate: pack-apply
 	@test -f "$(WEB)/.env" || (echo "[qtc-aac] missing apps/web/.env — run make setup" && exit 1)
 	@cd "$(WEB)" && bun run migrate
 
