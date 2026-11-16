@@ -7,6 +7,7 @@ import {
 	placeBid,
 	settleExpiredAuctions,
 } from '#lib/server/bazaar.js';
+import { bazaarBidFee } from '#lib/server/featureFlags.js';
 import { prisma } from '#lib/server/prisma.js';
 import { requireLogin } from '#lib/server/session.js';
 
@@ -44,7 +45,7 @@ export const load = (async ({ params, locals }) => {
 			endsAt: auction.ends_at,
 			listedAt: auction.listed_at,
 			createFee: auction.create_fee,
-			bidFee: auction.bid_fee,
+			bidFee: auction.bid_fee ?? bazaarBidFee(),
 			taxPercent: auction.tax_percent,
 			player: auction.player,
 			bids: auction.bids,

@@ -20,9 +20,9 @@
 		<h2 class="h2">{$_('bazaar.title')}</h2>
 		<div class="flex flex-row gap-2">
 			<a href="/bazaar/past" class="anchor text-sm">{$_('bazaar.past')}</a>
-			<Button href="/bazaar/create" size="sm">{$_('bazaar.create')}</Button>
 		</div>
 	</header>
+	<p class="text-sm opacity-80">{$_('bazaar.sell-in-client')}</p>
 
 	{#if data.auctions.length === 0}
 		<p class="opacity-70">{$_('bazaar.empty')}</p>

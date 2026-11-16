@@ -50,11 +50,6 @@ const SUBTOPIC_ROUTES: readonly SubtopicRoute[] = [
 		subtopic: 'owncharactertrades',
 		path: '/account/bazaar',
 	},
-	{
-		section: 'charactertrade',
-		subtopic: 'createcharactertrade',
-		path: '/bazaar/create',
-	},
 	{ section: 'account', subtopic: 'downloadclient', path: '/download' },
 	{ section: 'account', subtopic: 'createaccount', path: '/account/signup' },
 	{ section: 'account', subtopic: 'accountmanagement', path: '/account/login' },

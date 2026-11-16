@@ -1,14 +1,7 @@
 import { CharBazaarStatus, type Prisma } from '@prisma/client';
 
 import { PlayerGroup } from '#lib/players.js';
-import {
-	bazaarBidFee,
-	bazaarCreateFee,
-	bazaarMaxDays,
-	bazaarMinDays,
-	bazaarMinStartPrice,
-	bazaarTaxPercent,
-} from '#lib/server/featureFlags.js';
+import { bazaarBidFee } from '#lib/server/featureFlags.js';
 import { prisma } from '#lib/server/prisma.js';
 
 const COIN_TYPE_TRANSFERABLE = 2;
@@ -143,126 +136,11 @@ export async function settleAuctionById(
 	}
 }
 
-export async function listAuction(input: {
-	accountId: number;
-	playerId: number;
-	startPrice: number;
-	days: number;
-}): Promise<{ ok: true; id: string } | { ok: false; error: BazaarError }> {
-
-	const createFee = bazaarCreateFee();
-	const bidFee = bazaarBidFee();
-	const taxPercent = bazaarTaxPercent();
-	const minDays = bazaarMinDays();
-	const maxDays = bazaarMaxDays();
-	const minPrice = bazaarMinStartPrice();
-
-	if (input.days < minDays || input.days > maxDays) {
-		return {
-			ok: false,
-			error: fail(
-				'invalid_days',
-				`Auction duration must be between ${minDays} and ${maxDays} days`,
-			),
-		};
-	}
-	if (input.startPrice < minPrice) {
-		return {
-			ok: false,
-			error: fail('invalid_price', `Minimum start price is ${minPrice} coins`),
-		};
-	}
-
-	try {
-		const id = await prisma.$transaction(async (tx) => {
-			const player = await tx.players.findFirst({
-				where: {
-					id: input.playerId,
-					account_id: input.accountId,
-					deletion: 0,
-				},
-				include: {
-					online: true,
-					owned_guild: { select: { id: true } },
-				},
-			});
-			if (!player) {
-				throw fail('not_found', 'Character not found on this account');
-			}
-			if (player.group_id >= PlayerGroup.Tutor) {
-				throw fail('staff', 'Staff characters cannot be listed');
-			}
-			if (player.online) {
-				throw fail('online', 'Character must be offline to list');
-			}
-			if (player.charbazaar) {
-				throw fail('listed', 'Character is already listed');
-			}
-			if (player.owned_guild) {
-				throw fail('guild_owner', 'Guild leaders cannot be listed');
-			}
-
-			const account = await tx.accounts.findUniqueOrThrow({
-				where: { id: input.accountId },
-				select: { coins_transferable: true },
-			});
-			if (account.coins_transferable < createFee) {
-				throw fail('funds', 'Not enough transferable coins for listing fee');
-			}
-
-			await tx.accounts.update({
-				where: { id: input.accountId },
-				data: { coins_transferable: account.coins_transferable - createFee },
-			});
-			if (createFee > 0) {
-				await recordCoinTx(
-					tx,
-					input.accountId,
-					createFee,
-					`Char Bazaar listing fee (${player.name})`,
-					0,
-				);
-			}
-
-			const endsAt = new Date(Date.now() + input.days * 24 * 60 * 60 * 1000);
-			const auction = await tx.charBazaarAuction.create({
-				data: {
-					player_id: player.id,
-					seller_account_id: input.accountId,
-					start_price: input.startPrice,
-					current_price: input.startPrice,
-					ends_at: endsAt,
-					create_fee: createFee,
-					bid_fee: bidFee,
-					tax_percent: taxPercent,
-					status: CharBazaarStatus.LISTED,
-				},
-			});
-			await tx.players.update({
-				where: { id: player.id },
-				data: { charbazaar: true },
-			});
-			return auction.id;
-		});
-		return { ok: true, id };
-	} catch (e) {
-		if (e instanceof BazaarException) {
-			return { ok: false, error: e.toError() };
-		}
-		console.error('[bazaar] list failed', e);
-		return {
-			ok: false,
-			error: fail('list_failed', 'Failed to create auction').toError(),
-		};
-	}
-}
-
 export async function placeBid(input: {
 	accountId: number;
 	auctionId: string;
 	bid: number;
 }): Promise<{ ok: true } | { ok: false; error: BazaarError }> {
-
 	await settleExpiredAuctions();
 
 	try {
@@ -287,7 +165,8 @@ export async function placeBid(input: {
 				throw fail('low_bid', `Bid must be at least ${minBid}`);
 			}
 
-			const bidFee = auction.bid_fee;
+			// In-game auctions leave the bid fee to the website (NULL).
+			const bidFee = auction.bid_fee ?? bazaarBidFee();
 			const needed = input.bid + bidFee;
 			const bidder = await tx.accounts.findUniqueOrThrow({
 				where: { id: input.accountId },

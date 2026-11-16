@@ -998,8 +998,14 @@ model CharBazaarAuction {
   ends_at                   DateTime
   status                    CharBazaarStatus @default(LISTED)
   create_fee                Int              @db.UnsignedInt
-  bid_fee                   Int              @db.UnsignedInt
+  /// NULL = the website's current bid fee (in-game auctions).
+  bid_fee                   Int?             @db.UnsignedInt
   tax_percent               Int              @db.UnsignedInt
+  /// Showcased item appearance ids (comma separated), set in the game client.
+  showcase                  String?          @db.VarChar(255)
+  /// Chosen sales arguments, `[{"icon":N,"text":"…"}]`.
+  sales_arguments           String?          @db.Text
+  snapshot                  CharBazaarSnapshot?
   player                    Players          @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   seller                    Accounts         @relation("BazaarSeller", fields: [seller_account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   buyer                     Accounts?        @relation("BazaarBuyer", fields: [buyer_account_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -1012,6 +1018,65 @@ model CharBazaarAuction {
   @@index([current_bidder_account_id], map: "qtcaac_char_bazaar_auctions_bidder_fkey")
   @@index([status, ends_at], map: "qtcaac_char_bazaar_auctions_status_ends")
   @@map("qtcaac_char_bazaar_auctions")
+}
+
+/// Frozen copy of the character when the auction was set up in game.
+model CharBazaarSnapshot {
+  auction_id      String            @id
+  player_id       Int
+  name            String            @db.VarChar(255)
+  world_name      String            @db.VarChar(255)
+  blessings_count Int               @default(0)
+  blessings_twist Int               @default(0)
+  equipment       String?           @db.MediumText
+  items           String?           @db.MediumText
+  outfits         String?           @db.MediumText
+  mounts          String?           @db.MediumText
+  quests          String?           @db.MediumText
+  features        String?           @db.MediumText
+  showcase        String?           @db.MediumText
+  created_at      BigInt
+  skill_fist      BigInt            @default(0)
+  skill_club      BigInt            @default(0)
+  skill_sword     BigInt            @default(0)
+  skill_axe       BigInt            @default(0)
+  skill_dist      BigInt            @default(0)
+  skill_shielding BigInt            @default(0)
+  skill_fishing   BigInt            @default(0)
+  skill_fist_tries BigInt            @default(0)
+  skill_club_tries BigInt            @default(0)
+  skill_sword_tries BigInt            @default(0)
+  skill_axe_tries BigInt            @default(0)
+  skill_dist_tries BigInt            @default(0)
+  skill_shielding_tries BigInt            @default(0)
+  skill_fishing_tries BigInt            @default(0)
+  looktype        BigInt            @default(0)
+  lookaddons      BigInt            @default(0)
+  lookhead        BigInt            @default(0)
+  lookbody        BigInt            @default(0)
+  looklegs        BigInt            @default(0)
+  lookfeet        BigInt            @default(0)
+  lookmounthead   BigInt            @default(0)
+  lookmountbody   BigInt            @default(0)
+  lookmountlegs   BigInt            @default(0)
+  lookmountfeet   BigInt            @default(0)
+  health          BigInt            @default(0)
+  healthmax       BigInt            @default(0)
+  mana            BigInt            @default(0)
+  manamax         BigInt            @default(0)
+  maglevel        BigInt            @default(0)
+  manaspent       BigInt            @default(0)
+  cap             BigInt            @default(0)
+  soul            BigInt            @default(0)
+  balance         BigInt            @default(0)
+  experience      BigInt            @default(0)
+  level           BigInt            @default(0)
+  vocation        BigInt            @default(0)
+  sex             BigInt            @default(0)
+  auction         CharBazaarAuction @relation(fields: [auction_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "qtcaac_char_bazaar_snapshots_auction_id_fkey")
+
+  @@index([player_id], map: "qtcaac_char_bazaar_snapshots_player_id_idx")
+  @@map("qtcaac_char_bazaar_snapshots")
 }
 
 model CharBazaarBid {

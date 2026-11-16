@@ -367,7 +367,6 @@
 		"current": "Leilões atuais",
 		"past": "Leilões passados",
 		"past-empty": "Nenhum leilão passado.",
-		"create": "Criar leilão",
 		"empty": "Nenhum leilão ativo.",
 		"not-found": "Leilão não encontrado.",
 		"details": "Detalhes",
@@ -404,7 +403,8 @@
 		"my-bids": "Meus lances",
 		"my-bids-empty": "Você ainda não deu lances.",
 		"high-bid": "Maior",
-		"listed-badge": "Listado no Char Bazaar"
+		"listed-badge": "Listado no Char Bazaar",
+		"sell-in-client": "Para vender um personagem, entre no cliente do jogo e crie o leilão pela Store. Os lances são feitos aqui."
 	},
 	"devices": {
 		"title": "Dispositivos",

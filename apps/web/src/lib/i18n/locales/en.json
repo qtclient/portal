@@ -367,7 +367,6 @@
 		"current": "Current auctions",
 		"past": "Past auctions",
 		"past-empty": "No past auctions.",
-		"create": "Create auction",
 		"empty": "No active auctions.",
 		"not-found": "Auction not found.",
 		"details": "Details",
@@ -404,7 +403,8 @@
 		"my-bids": "My bids",
 		"my-bids-empty": "You have not placed any bids.",
 		"high-bid": "Highest",
-		"listed-badge": "Listed on Char Bazaar"
+		"listed-badge": "Listed on Char Bazaar",
+		"sell-in-client": "To sell a character, log into the game client and set up an auction from the Store. Bids are placed here."
 	},
 	"devices": {
 		"title": "Devices",

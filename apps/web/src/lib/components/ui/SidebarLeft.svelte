@@ -312,14 +312,12 @@
 							</li>
 							{#if isLoggedIn}
 								<li>
-									<a href={siteHref('charactertrade', 'createcharactertrade')}
-										>{$_('bazaar.create')}</a>
+									<a href={siteHref('charactertrade', 'owncharactertrades')}
+										>{$_('bazaar.my-auctions')}</a>
 								</li>
 								<li>
-									<a href="/account/bazaar">{$_('bazaar.my-auctions')}</a>
-								</li>
-								<li>
-									<a href="/account/bazaar/bids">{$_('bazaar.my-bids')}</a>
+									<a href={siteHref('charactertrade', 'ownbids')}
+										>{$_('bazaar.my-bids')}</a>
 								</li>
 							{/if}
 						</ul>
