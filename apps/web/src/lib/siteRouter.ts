@@ -42,6 +42,16 @@ const SUBTOPIC_ROUTES: readonly SubtopicRoute[] = [
 	},
 	{
 		section: 'charactertrade',
+		subtopic: 'ownbids',
+		path: '/account/bazaar/bids',
+	},
+	{
+		section: 'charactertrade',
+		subtopic: 'owncharactertrades',
+		path: '/account/bazaar',
+	},
+	{
+		section: 'charactertrade',
 		subtopic: 'createcharactertrade',
 		path: '/bazaar/create',
 	},
@@ -138,6 +148,12 @@ export function resolve(url: URL): string | null {
 
 	const section = pathname.slice(1);
 	if (!SECTIONS.has(section)) return null;
+
+	// CIP auction details: charactertrade/?subtopic=…&page=details&auctionid=N
+	if (section === 'charactertrade' && url.searchParams.get('page') === 'details') {
+		const id = url.searchParams.get('auctionid') ?? '';
+		if (/^[\w-]+$/.test(id)) return `/bazaar/${id}`;
+	}
 
 	const impl = matchSubtopic(section, url.searchParams.get('subtopic'));
 	if (impl && impl !== pathname) return impl;
