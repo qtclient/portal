@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { cipTimestamp, normPlatform, parseBrowserStack } from './parse.js';
+import { cipTimestamp, crashRevision, normPlatform, parseBrowserStack, pickCrashParts } from './parse.js';
 import { signatureOf, titleOf } from './signature.js';
 
 describe('signatureOf', () => {
@@ -62,3 +62,53 @@ describe('normPlatform', () => {
 		expect(normPlatform(null, '')).toBe('unknown');
 	});
 });
+
+describe('pickCrashParts', () => {
+	const file = (size: number, name: string) => ({ size, name });
+
+	test('CIP form: minidump by name, sessiondump kept, annotations as fields', () => {
+		const parts = pickCrashParts<{ size: number; name: string }>([
+			['minidump', file(100, 'abc.dmp')],
+			['sessiondump', file(5000, 'abc.dmp.session')],
+			['Comment', 'it broke'],
+			['ReportType', 'Full'],
+			['Version', '15.33.c68982ec'],
+		]);
+		expect(parts.dump?.name).toBe('abc.dmp');
+		expect(parts.sessiondump?.name).toBe('abc.dmp.session');
+		expect(parts.fields).toEqual({ Comment: 'it broke', ReportType: 'Full', Version: '15.33.c68982ec' });
+	});
+
+	test('Breakpad/Crashpad name still wins; a larger session dump is never the dump', () => {
+		const named = pickCrashParts<{ size: number; name: string }>([
+			['other', file(900, 'big.bin')],
+			['upload_file_minidump', file(100, 'x.dmp')],
+		]);
+		expect(named.dump?.name).toBe('x.dmp');
+		const unnamed = pickCrashParts<{ size: number; name: string }>([
+			['sessiondump', file(9000, 's.session')],
+			['file', file(100, 'y.dmp')],
+		]);
+		expect(unnamed.dump?.name).toBe('y.dmp');
+		expect(unnamed.sessiondump?.name).toBe('s.session');
+	});
+
+	test('largest file when nothing is named', () => {
+		const parts = pickCrashParts<{ size: number; name: string }>([
+			['a', file(10, 'a')],
+			['b', file(30, 'b')],
+		]);
+		expect(parts.dump?.name).toBe('b');
+		expect(parts.sessiondump).toBeNull();
+	});
+});
+
+describe('crashRevision', () => {
+	test('headers, then lowercase fields, then CIP Version', () => {
+		expect(crashRevision(new Headers({ 'x-tibia-client': 'r1' }), { Version: 'v' })).toBe('r1');
+		expect(crashRevision(new Headers(), { Version: '15.33.c68982ec' })).toBe('15.33.c68982ec');
+		expect(crashRevision(new Headers(), { revision: 'r2', Version: 'v' })).toBe('r2');
+		expect(crashRevision(new Headers(), {})).toBe('unknown');
+	});
+});
+

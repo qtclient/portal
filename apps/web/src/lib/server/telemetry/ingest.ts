@@ -3,9 +3,12 @@
  *
  * Crash (CIP `crashReportUrl` → /clientservices/crashreceiver.php, and
  * /api/telemetry/crash for /play):
- *   - multipart/form-data: the minidump is the file part (`upload_file_minidump`
- *     or the largest file); text parts are annotations. CIP sends `Comment` and
- *     `ReportType` (`Full` | `Minimal`); `platform` and `revision`/`ver` are read
+ *   - multipart/form-data: the minidump is the `minidump` part (CIP), or
+ *     `upload_file_minidump` (Breakpad/Crashpad), else the largest file; CIP's
+ *     `sessiondump` part is stored beside it. Text parts are annotations: CIP
+ *     sends ProductName, Version, Timestamp, OperatingSystem, HardwareID,
+ *     EngineID, LoginHost, LogMessages, Character, `Comment` and `ReportType`
+ *     (`Full` | `Minimal`); `platform` and `revision`/`ver`/`Version` are read
  *     when present.
  *   - application/octet-stream: raw minidump, annotations from the query string.
  *   - application/json: browser/WASM report `{ message, name, stack, stage, revision }`.
@@ -31,7 +34,7 @@ import {
 	telemetryEnabled,
 } from '#lib/server/telemetry/config.js';
 import { enqueueReport } from '#lib/server/telemetry/process.js';
-import { cipTimestamp, normPlatform } from '#lib/server/telemetry/parse.js';
+import { cipTimestamp, crashRevision, normPlatform, pickCrashParts } from '#lib/server/telemetry/parse.js';
 import { allow } from '#lib/server/telemetry/rateLimit.js';
 
 export type IngestContext = {
@@ -40,18 +43,6 @@ export type IngestContext = {
 	accountId: number | null;
 };
 
-
-function revisionFrom(request: Request, fields: Record<string, string>): string {
-	return (
-		request.headers.get('x-qtclient-revision')?.trim() ||
-		request.headers.get('x-tibia-client')?.trim() ||
-		fields.revision ||
-		fields.ver ||
-		fields.version ||
-		fields.clientRevision ||
-		'unknown'
-	).slice(0, 64);
-}
 
 function datedPath(id: string, ext: string): string {
 	const d = new Date();
@@ -88,6 +79,7 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 	let reportType: string;
 	let dumpPath: string;
 	let dumpSize: number;
+	let sessiondumpPath: string | null = null;
 
 	if (type.includes('application/json')) {
 		const text = await request.text();
@@ -111,26 +103,16 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 		dumpSize = text.length;
 	} else {
 		let bytes: Uint8Array | null = null;
+		let sessiondump: Uint8Array | null = null;
 		if (type.includes('multipart/form-data')) {
-			const form = await request.formData();
-			let best: File | null = null;
-			let named = false;
-			for (const [key, value] of form) {
-				if (typeof value === 'string') {
-					fields[key] = value.slice(0, 4000);
-					continue;
-				}
-				// Breakpad/Crashpad convention wins; otherwise take the largest file.
-				if (key === 'upload_file_minidump') {
-					best = value;
-					named = true;
-				} else if (!named && (!best || value.size > best.size)) {
-					best = value;
-				}
+			const parts = pickCrashParts((await request.formData()).entries());
+			Object.assign(fields, parts.fields);
+			if (parts.dump) {
+				if (parts.dump.size > max) return new Response('too large', { status: 413 });
+				bytes = new Uint8Array(await parts.dump.arrayBuffer());
 			}
-			if (best) {
-				if (best.size > max) return new Response('too large', { status: 413 });
-				bytes = new Uint8Array(await best.arrayBuffer());
+			if (parts.sessiondump && parts.sessiondump.size > 0 && parts.sessiondump.size <= max) {
+				sessiondump = new Uint8Array(await parts.sessiondump.arrayBuffer());
 			}
 		} else {
 			const buf = new Uint8Array(await request.arrayBuffer());
@@ -141,13 +123,18 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 		// Breakpad/Crashpad minidumps start with "MDMP".
 		const magic = String.fromCharCode(...bytes.subarray(0, 4));
 		if (magic !== 'MDMP') return new Response('not a minidump', { status: 400 });
-		platform = normPlatform(fields.platform ?? fields.os ?? fields.prod, ua);
+		platform = normPlatform(fields.platform ?? fields.os ?? fields.prod ?? fields.OperatingSystem, ua);
 		reportType = /^(full|minimal)$/i.test(fields.ReportType ?? '')
 			? fields.ReportType[0].toUpperCase() + fields.ReportType.slice(1).toLowerCase()
 			: 'Minimal';
 		dumpPath = datedPath(id, 'dmp');
 		writeRel(dumpPath, bytes);
 		dumpSize = bytes.byteLength;
+		if (sessiondump) {
+			// CIP's session recording rides along; kept beside the dump.
+			sessiondumpPath = datedPath(id, 'session');
+			writeRel(sessiondumpPath, sessiondump);
+		}
 	}
 
 	const comment = (fields.Comment ?? fields.comment ?? '').trim().slice(0, 4000) || null;
@@ -156,12 +143,13 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 		if (['Comment', 'comment', 'stack', 'message'].includes(k)) continue;
 		metadata[k] = v.slice(0, 512);
 	}
+	if (sessiondumpPath) metadata.sessiondump_path = sessiondumpPath;
 
 	await prisma.crashReport.create({
 		data: {
 			id,
 			platform,
-			revision: revisionFrom(request, fields),
+			revision: crashRevision(request.headers, fields),
 			report_type: reportType,
 			comment,
 			account_id: ctx.accountId,
@@ -203,7 +191,7 @@ export async function ingestHardware(ctx: IngestContext): Promise<Response> {
 		(e): e is HardwareEntry => !!e && typeof e === 'object',
 	);
 	const ua = request.headers.get('user-agent') ?? '';
-	const revision = revisionFrom(request, {});
+	const revision = crashRevision(request.headers, {});
 
 	const fps: Prisma.FpsSampleCreateManyInput[] = [];
 	for (const e of entries.slice(0, 500)) {

@@ -18,6 +18,58 @@ export function normPlatform(raw: string | null | undefined, ua: string): string
 	return 'unknown';
 }
 
+/** Field names a crash form may carry its minidump under (CIP first). */
+const MINIDUMP_PARTS = new Set(['minidump', 'upload_file_minidump']);
+
+export type CrashParts<F> = {
+	/** The minidump: a part named `minidump` (CIP) or `upload_file_minidump`
+	 * (Breakpad/Crashpad), else the largest other file. */
+	dump: F | null;
+	/** CIP's `sessiondump` part (the client's session recording), if any. */
+	sessiondump: F | null;
+	/** Text parts (annotations), each capped at 4000 characters. */
+	fields: Record<string, string>;
+};
+
+/** Splits a crash `multipart/form-data` body into minidump, session dump and annotations. */
+export function pickCrashParts<F extends { size: number }>(
+	entries: Iterable<[string, string | F]>,
+): CrashParts<F> {
+	const fields: Record<string, string> = {};
+	let dump: F | null = null;
+	let named = false;
+	let sessiondump: F | null = null;
+	for (const [key, value] of entries) {
+		if (typeof value === 'string') {
+			fields[key] = value.slice(0, 4000);
+			continue;
+		}
+		if (MINIDUMP_PARTS.has(key)) {
+			dump = value;
+			named = true;
+		} else if (key === 'sessiondump') {
+			sessiondump = value;
+		} else if (!named && (!dump || value.size > dump.size)) {
+			dump = value;
+		}
+	}
+	return { dump, sessiondump, fields };
+}
+
+/** The client revision: headers first, then the form (CIP sends `Version`). */
+export function crashRevision(headers: Headers, fields: Record<string, string>): string {
+	return (
+		headers.get('x-qtclient-revision')?.trim() ||
+		headers.get('x-tibia-client')?.trim() ||
+		fields.revision ||
+		fields.ver ||
+		fields.version ||
+		fields.Version ||
+		fields.clientRevision ||
+		'unknown'
+	).slice(0, 64);
+}
+
 /** CIP `yyyy-MM-dd hh:mm:ss,zzz` → Date. */
 export function cipTimestamp(v: unknown): Date | null {
 	if (typeof v !== 'string') return null;
