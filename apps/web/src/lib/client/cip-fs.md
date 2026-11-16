@@ -9,8 +9,7 @@ AppData / `.local/share` in C++).
 | macOS                             | `~/Library/Application Support/<Org>/<App>/`                 | `packages/<PACKAGE_CLIENT>/`       | `/Applications/<App>.app` (bootstrap only)   |
 | Windows                           | `%APPDATA%\<Org>\<App>\`                                     | `packages/<PACKAGE_CLIENT>/`       | installer `<App>.exe`                       |
 | Linux                             | `~/.local/share/<Org>/<App>/`                                | `packages/<PACKAGE_CLIENT>/`       | AppImage / binary                           |
-| Browser OPFS                      | `/home/web_user/.local/share/<Org>/<App>/` (`CIP_APPDATA`)   | `packages/<PACKAGE_CLIENT>/`       | CipSoft UI stage inside `tibia.wasm`        |
-| Browser IndexedDB `<brand>-cip-fs` | key prefix `packages/`                                       | `packages/<PACKAGE_CLIENT>/<file>` | (engine wasm/js bootstrap only)             |
+| Browser OPFS                      | `/home/web_user/.local/share/<Org>/<App>/` (`CIP_APPDATA`)   | `packages/<PACKAGE_CLIENT>/`       | `packages/LAUNCHER/` (`launcher.wasm`)      |
 
 Emscripten **home** / OPFS tip is `/home/web_user` (`CIP_HOME`). CipSoft
 AppData is the XDG path under that home (same formula as Linux desktop) —
@@ -37,11 +36,16 @@ Under CipSoft AppData:
 
 `/play` matches desktop’s two-binary ship:
 
-1. Portal: progress + OPFS mount + essentials/pack stage (no CIP chrome in Svelte).
-2. Cold qtclient: `launcher.wasm` (`launcher-web-current`) — Widgets Download/Update/Play.
-3. Warm tip or qtclient Play remount: `tibia.wasm` (`tibiaclient-web-current`) with
-   `QTCLIENT_WASM_SKIP_LAUNCHER` — game-only QML (never Widgets + QML together).
+1. Portal: progress, the qtclient-fs OPFS Worker, the launcher package
+   (`launcher-web-current` → `packages/LAUNCHER/`, the desktop app install) and
+   the tip pack stage (`mods/<pack>/`). No CIP chrome in Svelte.
+2. `launcher.wasm` — Widgets Download/Update/Play. It installs the client
+   package and CipSoft `assets.json` (plus mods/minimap channels) into
+   `packages/<PACKAGE_CLIENT>/` exactly as on desktop.
+3. Play (or a warm, up-to-date install): the page reloads into `tibia.wasm`,
+   loaded from `packages/<PACKAGE_CLIENT>/` like CipSoft's launcher starting
+   the client — game-only QML (never Widgets + QML together).
 
-Sprite stamp: `.tibia-sprite-packs`. Remount handoff: `tibia.play` /
+Remount handoff: `tibia.play` /
 `tibia.play.transition`. Stale tips (wrong package name / layout): clear site
 data and re-Update.

@@ -1,25 +1,23 @@
 <script lang="ts">
-	import { pack } from '#lib/pack.js';
 	import { onMount } from 'svelte';
 
 	import * as publicEnv from '$app/env/public';
 
 	import { diag, installPlayDiag } from '#lib/client/play-diag.js';
 	import {
+		acquirePlayLock,
 		applyProductPlayCss,
-		bootstrapClientPackage,
 		bootstrapLauncherPackage,
 		bootTibia,
 		hidePlayTransition,
 		installGameKeyGuard,
-		installThingsForLauncher,
 		PLAY_TRANSITION_KEY,
 		resumePlayTransition,
-		shouldAutoSkipQtclientLauncher,
 		takePlayHandoff,
 		tipUrl,
 		updatePlayTransition,
 	} from '#lib/client/tibia-browser.js';
+	import { pack } from '#lib/pack.js';
 	import { browserTitle } from '#lib/utils.js';
 
 	import type { PageData } from './$types';
@@ -35,138 +33,82 @@
 	let runtimeError = $state('');
 
 	/**
-	 * /play boot: desktop-like two-binary model.
-	 * Cold qtclient → launcher.wasm (Widgets only). Warm tip or qtclient Play remount →
-	 * tibia.wasm game-only (SKIP_LAUNCHER). Never Widgets + QML in one Module.
+	 * /play boot: the desktop two-binary model. Every visit starts the launcher
+	 * (launcher.wasm, Widgets only) — it checks/updates the tip like the CIP
+	 * launcher. Its Play button hands off (sessionStorage + reload) to the game
+	 * (tibia.wasm, SKIP_LAUNCHER). Never Widgets + QML in one Module.
 	 */
 	async function bootPlay(cdn: string) {
-		const handoff = takePlayHandoff();
-		const auto = await shouldAutoSkipQtclientLauncher(cdn);
-		diag('autoSkipSoft', auto);
-		// qtclient Play remount, or tip already InstalledAndUsable (CIP stamp skip).
-		const skipLauncher = handoff || auto.skip;
-		const softOnly = !skipLauncher;
+		if (!(await acquirePlayLock()))
+			throw new Error(
+				'The game is already open in another tab or window. Close it, then reload this page.',
+			);
+		const skipLauncher = takePlayHandoff();
+		const launcherBoot = !skipLauncher;
 		try {
 			sessionStorage.setItem(PLAY_TRANSITION_KEY, '1');
 		} catch {
 			/* ignore */
 		}
-		diag('bootPlay', {
-			handoff,
-			skipLauncher,
-			softOnly,
-			cdn,
-			tipWarm: auto.skip,
-		});
+		diag('bootPlay', { skipLauncher, launcherBoot, cdn });
 		resumePlayTransition();
 		updatePlayTransition(
 			skipLauncher ? 'Launching client…' : 'Loading qtclient…',
 			8,
 		);
 		const clientBase = tipUrl(cdn, 'launcher/tibiaclient-web-current');
-		const softBase = tipUrl(cdn, 'launcher/launcher-web-current');
-		const wasmBase = softOnly ? softBase : clientBase;
+		const launcherBase = tipUrl(cdn, 'launcher/launcher-web-current');
+		const wasmBase = launcherBoot ? launcherBase : clientBase;
 		const assetBase = new URL(cdn, location.origin).href.replace(/\/+$/, '');
 		const stage = document.getElementById('play-stage');
 		if (!stage) throw new Error('Missing #play-stage');
 
-		let engineStamp = '';
-		let revision = '';
-		let packWasmBase = '';
-		try {
-			const [stampRes, releaseRes, webRes] = await Promise.all([
-				fetch(`${clientBase}/package.json.version`, { cache: 'no-store' }),
-				fetch(`${assetBase}/latest/release.json`, { cache: 'no-store' }),
-				fetch(`${assetBase}/latest/client-version.json`, { cache: 'no-store' }),
-			]);
-			if (stampRes.ok) engineStamp = (await stampRes.text()).trim();
-			if (releaseRes.ok) {
-				const release = (await releaseRes.json()) as {
-					revision?: string;
-					targets?: { web?: { wasm?: string } };
-				};
-				revision = release.revision?.trim() ?? '';
-				const wasmRel = release.targets?.web?.wasm?.trim() ?? '';
-				if (wasmRel) packWasmBase = tipUrl(cdn, wasmRel);
-			}
-			if (!revision && webRes.ok) {
-				const web = (await webRes.json()) as { revision?: string };
-				revision = web.revision?.trim() ?? '';
-			}
-			diag('engine stamps', {
-				engineStamp: engineStamp || null,
-				revision: revision || null,
-				packWasmBase: packWasmBase || null,
-				stampOk: stampRes.ok,
-				releaseOk: releaseRes.ok,
-				webOk: webRes.ok,
-			});
-		} catch (err) {
-			diag('engine stamps failed', {
-				err: err instanceof Error ? err.message : String(err),
-			});
+		const [stampRes, releaseRes] = await Promise.all([
+			fetch(`${clientBase}/package.json.version`, { cache: 'no-store' }),
+			fetch(`${assetBase}/latest/release.json`, { cache: 'no-store' }),
+		]);
+		if (!stampRes.ok)
+			throw new Error(`client package.json.version HTTP ${stampRes.status}`);
+		if (!releaseRes.ok)
+			throw new Error(`latest/release.json HTTP ${releaseRes.status}`);
+		const engineStamp = (await stampRes.text()).trim();
+		const release = (await releaseRes.json()) as {
+			revision?: string;
+			targets?: { web?: { wasm?: string } };
+		};
+		const revision = release.revision?.trim() ?? '';
+		const wasmRel = release.targets?.web?.wasm?.trim() ?? '';
+		if (!revision || !wasmRel)
+			throw new Error('latest/release.json has no revision / web wasm tip');
+		const packWasmBase = tipUrl(cdn, wasmRel);
+		diag('engine stamps', { engineStamp, revision, packWasmBase });
+
+		// CipSoft art as soon as tip URLs are known, not a black stage while
+		// the engine loads.
+		applyProductPlayCss({ assetBase, packWasmBase, engineStamp });
+
+		// The portal installs the launcher (the desktop app install); the game
+		// starts from the package the launcher installed (see bootTibia).
+		if (launcherBoot) {
+			const { fromCache, version } = await bootstrapLauncherPackage(cdn, (p) =>
+				updatePlayTransition(p.label, p.progress),
+			);
+			diag('bootstrapLauncherPackage done', { fromCache, version });
 		}
-
-		// CipSoft art as soon as tip URLs are known — avoid black stage during
-		// IDB/OPFS (pack stage used to apply this ~17s later).
-		applyProductPlayCss({
-			assetBase,
-			packWasmBase: packWasmBase || undefined,
-			engineStamp: engineStamp || undefined,
-		});
-
-		// While soft launcher bootstraps, warm the game tip IDB for remount.
-		if (softOnly) {
-			void bootstrapClientPackage(cdn)
-				.then((r) => diag('prefetchClientPackage done', r))
-				.catch((err: unknown) =>
-					diag('prefetchClientPackage failed', {
-						err: err instanceof Error ? err.message : String(err),
-					}),
-				);
-		}
-
-		const bootstrap = softOnly
-			? bootstrapLauncherPackage
-			: bootstrapClientPackage;
-		const { fromCache, version } = await bootstrap(cdn, (p) => {
-			updatePlayTransition(p.label, p.progress);
-		});
-		diag(
-			softOnly
-				? 'bootstrapLauncherPackage done'
-				: 'bootstrapClientPackage done',
-			{
-				fromCache,
-				version,
-				skipLauncher,
-				softOnly,
-			},
-		);
-		updatePlayTransition(
-			skipLauncher
-				? fromCache
-					? 'Starting game…'
-					: 'Launching client…'
-				: 'Preparing…',
-			82,
-		);
-
-		// qtclient C++ installs things packs into OPFS tip via this portal hook.
-		window.__qtclientInstallThings = installThingsForLauncher;
+		updatePlayTransition(skipLauncher ? 'Starting game…' : 'Preparing…', 82);
 
 		diag('bootTibia start', {
-			engine: softOnly ? 'launcher' : 'tibia',
+			engine: launcherBoot ? 'launcher' : 'tibia',
 			skipLauncher,
 			wasmBase,
 			packWasmBase,
 		});
 		bootTibia({
-			engine: softOnly ? 'launcher' : 'tibia',
+			engine: launcherBoot ? 'launcher' : 'tibia',
 			wasmBase,
 			revision,
-			packWasmBase: packWasmBase || undefined,
-			engineStamp: engineStamp || undefined,
+			packWasmBase,
+			engineStamp,
 			assetBase,
 			skipLauncher,
 			onStatus(text, progress) {
@@ -174,14 +116,14 @@
 			},
 			onReady() {
 				// onLoaded is too early for both paths (before callMain / tip work).
-				diag('bootTibia onReady', { skipLauncher, softOnly });
+				diag('bootTibia onReady', { skipLauncher, launcherBoot });
 			},
 			onLauncherReady() {
-				diag('bootTibia onLauncherReady', { softOnly });
-				if (softOnly) hidePlayTransition();
+				diag('bootTibia onLauncherReady', { launcherBoot });
+				if (launcherBoot) hidePlayTransition();
 			},
 			onFatal(message) {
-				diag('bootTibia onFatal', { message, skipLauncher, softOnly });
+				diag('bootTibia onFatal', { message, skipLauncher, launcherBoot });
 				hidePlayTransition();
 				runtimeError = message;
 			},
@@ -202,13 +144,6 @@
 		document.body.style.height = '100%';
 		document.body.style.background = '#0b0e12';
 
-		// Drop legacy remount query (?game=1) if present.
-		const url = new URL(location.href);
-		if (url.searchParams.has('game')) {
-			url.searchParams.delete('game');
-			history.replaceState(null, '', url.pathname + url.search + url.hash);
-		}
-
 		void bootPlay(data.cdn).catch((err: unknown) => {
 			const message = err instanceof Error ? err.message : String(err);
 			diag('bootPlay threw', { message });
@@ -217,8 +152,6 @@
 		});
 
 		return () => {
-			delete window.__qtclientInstallThings;
-			delete window.__qtclientStartGame;
 			removeKeyGuard();
 			removeDiag();
 			document.documentElement.classList.remove('play-mode');

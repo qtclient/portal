@@ -3,7 +3,7 @@ import { runtimeAssetBase } from '#lib/server/runtimeEnv.js';
 import type { RequestHandler } from './$types';
 
 /**
- * Same-origin tip proxy for the soft launcher WASM Module.
+ * Same-origin tip proxy for the launcher WASM Module.
  *
  * Qt QNAM on /play sets Cache-Control (AlwaysNetwork) and hits cross-origin
  * :9080 / static tip hosts. Safari / Chrome device emulation then preflight
@@ -42,7 +42,8 @@ async function proxy(path: string, request: Request): Promise<Response> {
 	const base = tipBase();
 	if (!base) return new Response('QTCAAC_ASSET_BASE unset', { status: 500 });
 	const rel = path.replace(/^\/+/, '');
-	if (!rel || rel.includes('..')) return new Response('bad path', { status: 400 });
+	if (!rel || rel.includes('..'))
+		return new Response('bad path', { status: 400 });
 
 	const upstreamUrl = `${base}/${rel}`;
 	const headers: Record<string, string> = {
