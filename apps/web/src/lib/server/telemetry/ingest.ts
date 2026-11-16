@@ -101,6 +101,9 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 		for (const [k, v] of Object.entries(payload)) {
 			if (typeof v === 'string') fields[k] = v;
 		}
+		if (!fields.message && !fields.stack) {
+			return new Response('missing message/stack', { status: 400 });
+		}
 		platform = 'wasm';
 		reportType = 'wasm';
 		dumpPath = datedPath(id, 'json');

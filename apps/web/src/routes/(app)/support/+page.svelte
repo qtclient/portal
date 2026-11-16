@@ -17,7 +17,11 @@
 
 <section class="content-box mx-auto max-w-2xl px-4 py-12">
 	<h1 class="text-2xl font-semibold">Support</h1>
-	{#if data.subtopic === 'tibiarules'}
+	{#if data.legal}
+		<p class="mt-3 text-sm opacity-80">
+			This document has not been published yet.
+		</p>
+	{:else if data.subtopic === 'tibiarules'}
 		<p class="mt-3 text-sm opacity-80">
 			Be respectful, no cheating, no real-money trading of game accounts outside
 			official channels. Full rules coming soon.

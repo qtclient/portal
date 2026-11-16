@@ -88,16 +88,6 @@
 										{$_('edit')}
 									</a>
 									<a
-										href="/account/characters/{character.name}/rename"
-										class="anchor">
-										{$_('character-rename.link')}
-									</a>
-									<a
-										href="/account/characters/{character.name}/change-sex"
-										class="anchor">
-										{$_('character-change-sex.link')}
-									</a>
-									<a
 										href="/account/characters/{character.name}/delete"
 										class="anchor"
 										type="submit">

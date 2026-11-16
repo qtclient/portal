@@ -350,21 +350,6 @@
 		"search": "Buscar",
 		"account-type": "Tipo"
 	},
-	"character-rename": {
-		"link": "Renomear",
-		"disabled": "Renomear personagem está desabilitado neste servidor.",
-		"description": "Renomear \"{name}\" por {price} coins transferíveis.",
-		"new-name": "Novo nome",
-		"submit": "Renomear personagem",
-		"must-be-offline": "O personagem precisa estar offline para renomear."
-	},
-	"character-change-sex": {
-		"link": "Mudar sexo",
-		"disabled": "Mudança de sexo está desabilitada neste servidor.",
-		"description": "Mudar o sexo de \"{name}\" por {price} coins transferíveis.",
-		"submit": "Mudar sexo",
-		"must-be-offline": "O personagem precisa estar offline para mudar o sexo."
-	},
 	"events": {
 		"title": "Agenda de eventos",
 		"active": "Eventos ativos",
