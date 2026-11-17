@@ -42,6 +42,12 @@ async function symbolicate(report: {
 export async function processReport(id: string): Promise<void> {
 	const report = await prisma.crashReport.findUnique({ where: { id } });
 	if (!report) return;
+	// A minimal report (annotations only, no minidump) has nothing to symbolicate.
+	if (!report.dump_path) {
+		if (report.status === 'pending')
+			await prisma.crashReport.update({ where: { id }, data: { status: 'unsymbolicated' } });
+		return;
+	}
 
 	let result: Symbolicated | null;
 	try {

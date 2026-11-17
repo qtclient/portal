@@ -85,8 +85,8 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 	const id = randomUUID();
 	let platform: string;
 	let reportType: string;
-	let dumpPath: string;
-	let dumpSize: number;
+	let dumpPath: string | null;
+	let dumpSize: number | null;
 	let sessiondumpPath: string | null = null;
 
 	if (type.includes('application/json')) {
@@ -133,10 +133,12 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 				return new Response('too large', { status: 413 });
 			bytes = buf.byteLength ? buf : null;
 		}
-		if (!bytes) return new Response('missing minidump', { status: 400 });
+		// CIP sends its annotations without the dump when the player does not
+		// choose the full report: keep it as a minimal report.
+		const minimal = !bytes && type.includes('multipart/form-data') && Object.keys(fields).length > 0;
+		if (!bytes && !minimal) return new Response('missing minidump', { status: 400 });
 		// Breakpad/Crashpad minidumps start with "MDMP".
-		const magic = String.fromCharCode(...bytes.subarray(0, 4));
-		if (magic !== 'MDMP')
+		if (bytes && String.fromCharCode(...bytes.subarray(0, 4)) !== 'MDMP')
 			return new Response('not a minidump', { status: 400 });
 		platform = normPlatform(
 			fields.platform ?? fields.os ?? fields.prod ?? fields.OperatingSystem,
@@ -146,9 +148,14 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 			? fields.ReportType[0].toUpperCase() +
 				fields.ReportType.slice(1).toLowerCase()
 			: 'Minimal';
-		dumpPath = datedPath(id, 'dmp');
-		writeRel(dumpPath, bytes);
-		dumpSize = bytes.byteLength;
+		if (bytes) {
+			dumpPath = datedPath(id, 'dmp');
+			writeRel(dumpPath, bytes);
+			dumpSize = bytes.byteLength;
+		} else {
+			dumpPath = null;
+			dumpSize = null;
+		}
 		if (sessiondump) {
 			// CIP's session recording rides along; kept beside the dump.
 			sessiondumpPath = datedPath(id, 'session');
