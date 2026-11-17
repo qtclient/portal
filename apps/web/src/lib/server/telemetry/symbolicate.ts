@@ -6,7 +6,7 @@ import { SourceMapConsumer } from 'source-map-js';
 
 import { prisma } from '#lib/server/prisma.js';
 import { stackwalkBinary, symbolsDir, telemetryDir } from '#lib/server/telemetry/config.js';
-import { parseBrowserStack } from '#lib/server/telemetry/parse.js';
+import { parseBrowserStack, parseSymbolMap } from '#lib/server/telemetry/parse.js';
 import type { Frame } from '#lib/server/telemetry/signature.js';
 
 export type Symbolicated = {
@@ -121,11 +121,43 @@ async function sourceMapFor(revision: string, wasmFile: string): Promise<SourceM
 	return consumer;
 }
 
-/** Browser payload → frames; WASM offsets resolve through uploaded source maps. */
+const symbolMaps = new Map<string, Map<number, string> | null>();
+
+async function symbolMapFor(revision: string, wasmFile: string): Promise<Map<number, string> | null> {
+	const key = `${revision}/${wasmFile}`;
+	if (symbolMaps.has(key)) return symbolMaps.get(key)!;
+	const row = await prisma.symbolFile.findUnique({
+		where: {
+			kind_debug_id_code_file: { kind: 'symbolmap', debug_id: revision, code_file: wasmFile },
+		},
+	});
+	const abs = row ? join(symbolsDir(), row.path) : '';
+	const map = abs && existsSync(abs) ? parseSymbolMap(readFileSync(abs, 'utf8')) : null;
+	if (symbolMaps.size > 8) symbolMaps.clear();
+	symbolMaps.set(key, map);
+	return map;
+}
+
+/** Forget cached symbol data for a revision (a new upload replaced it). */
+export function forgetSymbols(revision: string): void {
+	for (const cache of [consumers, symbolMaps] as Map<string, unknown>[])
+		for (const key of [...cache.keys()]) if (key.startsWith(`${revision}/`)) cache.delete(key);
+}
+
+/** Browser payload → frames; WASM frames resolve through the uploaded symbol map
+ * (function index, every browser) or source map (byte offset, V8/SpiderMonkey). */
 export async function symbolicateWasm(payload: WasmCrashPayload, revision: string): Promise<Symbolicated> {
 	const frames = parseBrowserStack(payload.stack ?? '');
+	// JSC stacks name no module for blob-loaded wasm; the page says which engine ran.
+	const engine = typeof payload.extra?.engine === 'string' ? payload.extra.engine : 'tibia.wasm';
 	for (const f of frames) {
-		if (!f.module?.endsWith('.wasm') || !f.offset?.startsWith('0x')) continue;
+		if (f.index == null && !f.module?.endsWith('.wasm')) continue;
+		if (!f.module?.endsWith('.wasm')) f.module = engine;
+		if (!f.function && f.index != null) {
+			const name = (await symbolMapFor(revision, f.module))?.get(f.index);
+			if (name) f.function = name;
+		}
+		if (!f.offset?.startsWith('0x')) continue;
 		const map = await sourceMapFor(revision, f.module);
 		if (!map) continue;
 		// Emscripten -gsource-map: line 1, column = byte offset in the module.

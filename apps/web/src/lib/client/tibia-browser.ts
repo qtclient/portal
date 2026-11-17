@@ -618,7 +618,8 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 	const thisProgram = launcherEngine
 		? `${packageFsRoot(PACKAGE_LAUNCHER)}/${jsName}`
 		: callbacks.clientProgram;
-	if (!thisProgram) throw new Error('No client program to start — open the launcher.');
+	if (!thisProgram)
+		throw new Error('No client program to start — open the launcher.');
 	const engineFile = (name: string) => readEngineFile(thisProgram, name);
 	const scriptAttr = launcherEngine ? 'launcher' : 'tibia';
 
@@ -718,6 +719,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 					: `${ev.filename}:${ev.lineno}:${ev.colno}`,
 			stage: 'window.onerror',
 			revision: callbacks.revision,
+			extra: { engine: wasmName },
 		});
 		diagWarn('window.onerror', {
 			message: ev.message,
@@ -736,6 +738,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 			stack: reason instanceof Error ? reason.stack : null,
 			stage: 'unhandledrejection',
 			revision: callbacks.revision,
+			extra: { engine: wasmName },
 		});
 		diagWarn('unhandledrejection', {
 			err:
@@ -938,7 +941,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 									: new Error(String(reason)).stack,
 							stage: 'wasm.onAbort',
 							revision: callbacks.revision,
-							extra: wasmHeapSnap(),
+							extra: { engine: wasmName, ...wasmHeapSnap() },
 						});
 						diagWarn('wasm onAbort', {
 							reason: reason instanceof Error ? reason.message : String(reason),
@@ -967,6 +970,14 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 							try {
 								return await prevMain(args);
 							} catch (err) {
+								reportBrowserCrash({
+									name: err instanceof Error ? err.name : 'Error',
+									message: err instanceof Error ? err.message : String(err),
+									stack: err instanceof Error ? err.stack : null,
+									stage: 'callMain',
+									revision: callbacks.revision,
+									extra: { engine: wasmName, ...wasmHeapSnap() },
+								});
 								diagWarn('callMain throw', {
 									name: err instanceof Error ? err.name : null,
 									message: err instanceof Error ? err.message : String(err),

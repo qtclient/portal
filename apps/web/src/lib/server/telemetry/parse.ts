@@ -98,12 +98,17 @@ export function parseBrowserStack(stack: string): Frame[] {
 		const w = WASM_FUNC.exec(line);
 		if (w) {
 			const file = WASM_FILE.exec(line)?.[1] ?? 'wasm';
-			// V8 names wasm frames `<module>.wasm.<fn>` or `$fn`; keep only real names.
-			const fnName = name && !name.includes('wasm-function') ? name.replace(/^.*\.wasm\./, '') : null;
+			// V8 names wasm frames `<module>.wasm.<fn>` or `$fn`; JSC names them by
+			// index (`9461@wasm-function[9461]`). Keep only real names.
+			const fnName =
+				name && !name.includes('wasm-function') && !/^\d+$/.test(name)
+					? name.replace(/^.*\.wasm\./, '')
+					: null;
 			frames.push({
 				module: file,
 				function: fnName && fnName !== file ? fnName : null,
 				offset: w[2] ?? `func[${w[1]}]`,
+				index: Number(w[1]),
 			});
 		} else {
 			const j = JS_LOC.exec(line);
@@ -121,4 +126,21 @@ export function parseBrowserStack(stack: string): Frame[] {
 		if (frames.length >= MAX_FRAMES) break;
 	}
 	return frames;
+}
+
+/** Emscripten `--emit-symbol-map` (`<index>:<name>`; non-identifier bytes as `\XX`). */
+export function parseSymbolMap(text: string): Map<number, string> {
+	const out = new Map<number, string>();
+	for (const line of text.split('\n')) {
+		const colon = line.indexOf(':');
+		if (colon <= 0) continue;
+		const index = Number(line.slice(0, colon));
+		if (!Number.isInteger(index)) continue;
+		const name = line
+			.slice(colon + 1)
+			.trimEnd()
+			.replace(/\\([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+		if (name) out.set(index, name);
+	}
+	return out;
 }
