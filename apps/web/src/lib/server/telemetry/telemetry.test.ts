@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { cipTimestamp, crashRevision, normPlatform, parseBrowserStack, pickCrashParts } from './parse.js';
+import { cipTimestamp, crashRevision, normPlatform, parseBrowserStack, parseSymbolMap, pickCrashParts } from './parse.js';
 import { signatureOf, titleOf } from './signature.js';
 
 describe('signatureOf', () => {
@@ -37,6 +37,18 @@ describe('parseBrowserStack', () => {
 		);
 		expect(frames[0]).toMatchObject({ module: 'tibia.wasm', function: 'foo', offset: '0x4a5b' });
 		expect(frames[1]).toMatchObject({ module: 'tibia.js', function: 'callMain', line: 10 });
+	});
+
+	test('safari wasm frames keep the function index', () => {
+		const frames = parseBrowserStack(
+			[
+				'__emval_call_method@blob:https://idleot.com/1e29b5de-d818:8:123',
+				'9461@wasm-function[9461]',
+				'49845@wasm-function[49845]',
+			].join('\n'),
+		);
+		expect(frames[1]).toMatchObject({ module: 'wasm', function: null, index: 9461, offset: 'func[9461]' });
+		expect(frames[2]).toMatchObject({ index: 49845 });
 	});
 
 	test('firefox frames', () => {
@@ -112,3 +124,12 @@ describe('crashRevision', () => {
 	});
 });
 
+
+describe('parseSymbolMap', () => {
+	test('decodes emscripten escapes', () => {
+		const map = parseSymbolMap('9461:QEventLoop::exec\\28QFlags<QEventLoop::ProcessEventsFlag>\\29\n49845:main\nbad\n');
+		expect(map.get(9461)).toBe('QEventLoop::exec(QFlags<QEventLoop::ProcessEventsFlag>)');
+		expect(map.get(49845)).toBe('main');
+		expect(map.size).toBe(2);
+	});
+});
