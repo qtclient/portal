@@ -36,7 +36,13 @@ import {
 	telemetryEnabled,
 } from '#lib/server/telemetry/config.js';
 import { enqueueReport } from '#lib/server/telemetry/process.js';
-import { cipTimestamp, crashRevision, normPlatform, pickCrashParts } from '#lib/server/telemetry/parse.js';
+import {
+	cipTimestamp,
+	crashRevision,
+	fpsHistorySamples,
+	normPlatform,
+	pickCrashParts,
+} from '#lib/server/telemetry/parse.js';
 import { allow } from '#lib/server/telemetry/rateLimit.js';
 
 export type IngestContext = {
@@ -44,7 +50,6 @@ export type IngestContext = {
 	ip: string | null;
 	accountId: number | null;
 };
-
 
 function datedPath(id: string, ext: string): string {
 	const d = new Date();
@@ -68,7 +73,8 @@ function tooLarge(request: Request, max: number): boolean {
 export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 	const { request } = ctx;
 	if (!telemetryEnabled()) return noContent();
-	if (!allow(`crash:${ctx.ip ?? '?'}`, 10)) return new Response('rate limited', { status: 429 });
+	if (!allow(`crash:${ctx.ip ?? '?'}`, 10))
+		return new Response('rate limited', { status: 429 });
 	const max = crashMaxBytes();
 	if (tooLarge(request, max)) return new Response('too large', { status: 413 });
 
@@ -110,24 +116,35 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 			const parts = pickCrashParts((await request.formData()).entries());
 			Object.assign(fields, parts.fields);
 			if (parts.dump) {
-				if (parts.dump.size > max) return new Response('too large', { status: 413 });
+				if (parts.dump.size > max)
+					return new Response('too large', { status: 413 });
 				bytes = new Uint8Array(await parts.dump.arrayBuffer());
 			}
-			if (parts.sessiondump && parts.sessiondump.size > 0 && parts.sessiondump.size <= max) {
+			if (
+				parts.sessiondump &&
+				parts.sessiondump.size > 0 &&
+				parts.sessiondump.size <= max
+			) {
 				sessiondump = new Uint8Array(await parts.sessiondump.arrayBuffer());
 			}
 		} else {
 			const buf = new Uint8Array(await request.arrayBuffer());
-			if (buf.byteLength > max) return new Response('too large', { status: 413 });
+			if (buf.byteLength > max)
+				return new Response('too large', { status: 413 });
 			bytes = buf.byteLength ? buf : null;
 		}
 		if (!bytes) return new Response('missing minidump', { status: 400 });
 		// Breakpad/Crashpad minidumps start with "MDMP".
 		const magic = String.fromCharCode(...bytes.subarray(0, 4));
-		if (magic !== 'MDMP') return new Response('not a minidump', { status: 400 });
-		platform = normPlatform(fields.platform ?? fields.os ?? fields.prod ?? fields.OperatingSystem, ua);
+		if (magic !== 'MDMP')
+			return new Response('not a minidump', { status: 400 });
+		platform = normPlatform(
+			fields.platform ?? fields.os ?? fields.prod ?? fields.OperatingSystem,
+			ua,
+		);
 		reportType = /^(full|minimal)$/i.test(fields.ReportType ?? '')
-			? fields.ReportType[0].toUpperCase() + fields.ReportType.slice(1).toLowerCase()
+			? fields.ReportType[0].toUpperCase() +
+				fields.ReportType.slice(1).toLowerCase()
 			: 'Minimal';
 		dumpPath = datedPath(id, 'dmp');
 		writeRel(dumpPath, bytes);
@@ -139,7 +156,8 @@ export async function ingestCrash(ctx: IngestContext): Promise<Response> {
 		}
 	}
 
-	const comment = (fields.Comment ?? fields.comment ?? '').trim().slice(0, 4000) || null;
+	const comment =
+		(fields.Comment ?? fields.comment ?? '').trim().slice(0, 4000) || null;
 	const metadata: Record<string, string> = {};
 	for (const [k, v] of Object.entries(fields)) {
 		if (['Comment', 'comment', 'stack', 'message'].includes(k)) continue;
@@ -172,29 +190,17 @@ function num(v: unknown): number {
 	return Number.isFinite(n) ? n : 0;
 }
 
-
 function str(v: unknown, max = 255): string | null {
 	return typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
-}
-
-/** CIP TFPSHistoryToJsonConverter document → one `dataType: "FPSHistory"` entry per sample. */
-function fpsHistorySamples(e: HardwareEntry): HardwareEntry[] {
-	if (e.dataType !== 1 || !Array.isArray(e.FPSHistory)) return [e];
-	return e.FPSHistory.filter((s): s is HardwareEntry => !!s && typeof s === 'object').map((s) => ({
-		...s,
-		dataType: 'FPSHistory',
-		clientID: e.clientID,
-		renderer: e.renderer === undefined ? undefined : String(e.renderer),
-		platform: e.platform,
-		revision: e.revision,
-	}));
 }
 
 export async function ingestHardware(ctx: IngestContext): Promise<Response> {
 	const { request } = ctx;
 	if (!telemetryEnabled()) return noContent();
-	if (!allow(`hw:${ctx.ip ?? '?'}`, 30)) return new Response('rate limited', { status: 429 });
-	if (tooLarge(request, 2 * 1024 * 1024)) return new Response('too large', { status: 413 });
+	if (!allow(`hw:${ctx.ip ?? '?'}`, 30))
+		return new Response('rate limited', { status: 429 });
+	if (tooLarge(request, 2 * 1024 * 1024))
+		return new Response('too large', { status: 413 });
 
 	let body: unknown;
 	try {
