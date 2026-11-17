@@ -36,9 +36,12 @@ Under CipSoft AppData:
 
 `/play` matches desktop’s two-binary ship:
 
-1. Portal: progress, the qtclient-fs OPFS Worker, the launcher package
-   (`launcher-web-current` → `packages/LAUNCHER/`, the desktop app install) and
-   the tip pack stage (`mods/<pack>/`). No CIP chrome in Svelte.
+1. Portal: progress, the launcher package (`launcher-web-current` →
+   `packages/LAUNCHER/`, the desktop app install) and the tip pack stage
+   (`mods/<pack>/`), through `opfs.ts`. No CIP chrome in Svelte.
+   Each engine then mounts OPFS itself: its `main()` starts the engine's own
+   qtclient-fs Worker (qtclient `browser/qtclient-fs.js`), the only OPFS
+   client while it runs.
 2. `launcher.wasm` — Widgets Download/Update/Play. It installs the client
    package and CipSoft `assets.json` (plus mods/minimap channels) into
    `packages/<PACKAGE_CLIENT>/` exactly as on desktop.

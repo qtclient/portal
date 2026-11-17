@@ -1,7 +1,7 @@
 /**
  * Browser boot for the qtclient wasm engines on /play (launcher + game).
  * Loads the engine glue + qtloader into the /play document (no iframe), hands
- * C++ the page's qtclient-fs (OPFS Worker), stages the tip, then starts main.
+ * stages the tip pack, then starts main (which mounts OPFS with its own Worker).
  */
 import { playEnv } from '$pack/play.client';
 
@@ -19,6 +19,7 @@ import {
 	readPackageFile,
 } from './cip-package.js';
 import { reportBrowserCrash } from './crash-report';
+import { closeOpfsWriter, readFile, writeFile } from './opfs.js';
 import { createListenerBag } from './otc/dom-util';
 import {
 	clearOtcRemountCount,
@@ -27,7 +28,6 @@ import {
 	reloadForOtcRemount,
 } from './otc/wasm-guard';
 import { diag, diagFlush, diagWarn } from './play-diag';
-import { type QtclientFs, qtclientFs } from './qtclient-fs/bridge.js';
 import { attachViewMagnify } from './view-magnify';
 
 /** The client package the launcher installs (tip `directoryname`). */
@@ -212,7 +212,8 @@ export function installGameKeyGuard(): () => void {
 type TibiaModule = {
 	ENV?: Record<string, string>;
 	callMain: (args?: string[]) => void;
-	qtclientFs?: QtclientFs;
+	/** qtclient browser/qtclient-fs.js — the engine's OPFS Worker. */
+	qtclientFs?: { stats(): Promise<QtclientFsWorkerStats> };
 	/** browser/wasm_heap_stats.cpp — publishes Module.qtclientHeap. */
 	_qtclient_heap_stats_publish?: () => void;
 	qtclientHeap?: Record<string, number>;
@@ -224,15 +225,18 @@ type TibiaModule = {
 	qtclientJspi?: { parked: number; posted: number };
 };
 
-/**
- * Launcher + game: hand the page's qtclient-fs (OPFS Worker) to C++ as
- * Module.qtclientFs. main() attaches to it and mounts the WasmFS OPFS backend
- * at /home/web_user (qtclient browser/qtclient_opfs_backend.cpp).
- */
-async function mountQtclientFs(instance: TibiaModule): Promise<void> {
-	instance.qtclientFs = await qtclientFs();
-	diag('qtclient-fs ready for wasm', { home: CIP_HOME, mods: '/mods' });
-}
+type QtclientFsWorkerStats = {
+	stats: {
+		calls: number;
+		ms: number;
+		bytesRead: number;
+		bytesWritten: number;
+		byOp: Record<string, { calls: number; ms: number }>;
+	};
+	openHandles: number;
+	idleHandles: number;
+	nodes: number;
+};
 
 type QtLoadConfig = {
 	locateFile?: (path: string) => string;
@@ -556,10 +560,7 @@ async function stageTipPack(
 			`mods/${CLIENT_PACK_ID}/.pack.stamp HTTP ${stampRes.status}`,
 		);
 	const tipStamp = (await stampRes.text()).trim();
-	const fs = await qtclientFs();
-	const stagedBytes = await fs.readFileAsync(
-		`/mods/${CLIENT_PACK_ID}/.pack.stamp`,
-	);
+	const stagedBytes = await readFile(`/mods/${CLIENT_PACK_ID}/.pack.stamp`);
 	const staged = stagedBytes && new TextDecoder().decode(stagedBytes).trim();
 	if (staged === tipStamp) {
 		diagFlush('stageTipPack already staged', {
@@ -593,7 +594,7 @@ async function stageTipPack(
 				wasmUrl(packWasmBase, `mods/${CLIENT_PACK_ID}/${rel}`, stamp),
 			);
 			if (!res.ok) throw new Error(`pack file HTTP ${res.status}: ${rel}`);
-			await fs.writeFileAsync(
+			await writeFile(
 				`/mods/${CLIENT_PACK_ID}/${rel}`,
 				new Uint8Array(await res.arrayBuffer()),
 			);
@@ -608,7 +609,7 @@ async function stageTipPack(
 		),
 	);
 	// Stamp last: it marks the staged tree complete.
-	await fs.writeFileAsync(
+	await writeFile(
 		`/mods/${CLIENT_PACK_ID}/.pack.stamp`,
 		new TextEncoder().encode(tipStamp),
 	);
@@ -738,11 +739,13 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 			jspi: mod.qtclientJspi ? { posted: mod.qtclientJspi.posted } : null,
 		};
 	};
-	/** Heap snapshot + the qtclient-fs Worker's counters (async: asks the Worker). */
+	/** Heap snapshot + the engine's qtclient-fs Worker counters. */
 	const logHeapAndFs = async (label: string) => {
 		const snap = wasmHeapSnap();
 		try {
-			const w = await (await qtclientFs()).statsAsync();
+			const fs = liveModule?.qtclientFs;
+			if (!fs) throw new Error('engine has no qtclient-fs');
+			const w = await fs.stats();
 			const top = Object.entries(w.stats.byOp)
 				.sort((a, b) => b[1].ms - a[1].ms)
 				.slice(0, 6)
@@ -991,7 +994,6 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 				_config: unknown,
 			): Promise<TibiaModule> => {
 				callbacks.onStatus?.('Preparing…', 80);
-				await mountQtclientFs(instance);
 				const skipLauncher = !launcherEngine && !!callbacks.skipLauncher;
 				try {
 					const staged = CLIENT_PACK_ID
@@ -1013,6 +1015,8 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 					callbacks.onFatal?.(`Couldn't stage tip pack: ${msg}`);
 					throw err;
 				}
+				// The engine's own qtclient-fs Worker owns OPFS from main() on.
+				closeOpfsWriter();
 				// Assets are the launcher's job (CipSoft assets.json into the
 				// package, like desktop); the game trusts its install.
 				diag('tip ready → callMain', {

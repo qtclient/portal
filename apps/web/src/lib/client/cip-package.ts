@@ -11,7 +11,7 @@
  */
 import { packageFsRoot } from './cip-fs.js';
 import { unpackLzmaAlone } from './lzma-alone.js';
-import { qtclientFs } from './qtclient-fs/bridge.js';
+import { readFile, writeFile } from './opfs.js';
 
 export type CipFileRec = {
 	url: string;
@@ -64,10 +64,9 @@ export async function ensurePackage(opts: {
 	const { packageName, onProgress } = opts;
 	const packageBase = opts.packageBase.replace(/\/+$/, '');
 	const root = packageFsRoot(packageName);
-	const fs = await qtclientFs();
 	onProgress?.({ label: 'Checking package version…', progress: 5 });
 	const doc = await fetchPackageDoc(packageBase);
-	const local = await fs.readFileAsync(`${root}/package.json.version`);
+	const local = await readFile(`${root}/package.json.version`);
 	if (local && new TextDecoder().decode(local).trim() === doc.version) {
 		return { version: doc.version, fromCache: true };
 	}
@@ -100,16 +99,16 @@ export async function ensurePackage(opts: {
 			(await sha256Hex(unpacked)) !== file.unpackedhash
 		)
 			throw new Error(`unpacked hash/size mismatch for ${file.localfile}`);
-		await fs.writeFileAsync(`${root}/${file.localfile}`, unpacked);
+		await writeFile(`${root}/${file.localfile}`, unpacked);
 		donePacked += Math.max(file.packedsize, 0);
 	}
 	const text = new TextEncoder();
-	await fs.writeFileAsync(
+	await writeFile(
 		`${root}/package.json`,
 		text.encode(`${JSON.stringify(doc, null, 2)}\n`),
 	);
 	// Version last: it marks the package complete.
-	await fs.writeFileAsync(
+	await writeFile(
 		`${root}/package.json.version`,
 		text.encode(`${doc.version}\n`),
 	);
@@ -123,7 +122,7 @@ export async function readPackageFile(
 	localfile: string,
 ): Promise<ArrayBuffer> {
 	const path = `${packageFsRoot(packageName)}/${localfile}`;
-	const bytes = await (await qtclientFs()).readFileAsync(path);
+	const bytes = await readFile(path);
 	if (!bytes)
 		throw new Error(`Missing ${path} — install via the launcher first.`);
 	return bytes.buffer as ArrayBuffer;
