@@ -54,7 +54,7 @@ export type TibiaBootOptions = {
 	assetBase: string;
 	/**
 	 * Which engine package / Emscripten entry to boot.
-	 * qtclient chrome = `launcher` (Widgets-only); game = `tibia` (QML).
+	 * `launcher` = CipSoft's launcher (Widgets); game = `tibia` (QML).
 	 */
 	engine?: 'launcher' | 'tibia';
 	/**
@@ -410,8 +410,8 @@ export function hidePlayTransition(): void {
 }
 
 /**
- * Install the launcher tip (launcher.js / .wasm, the desktop launcher's
- * Widgets-only binary) into OPFS packages/LAUNCHER/ for /play.
+ * Install the launcher package (launcher.js / .wasm: CipSoft's launcher, the
+ * same classes as desktop) into OPFS packages/LAUNCHER/ for /play.
  */
 export async function bootstrapLauncherPackage(
 	cdn: string,

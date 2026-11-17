@@ -4,7 +4,7 @@
  *
  * The portal installs one package itself: the launcher binary, which must
  * exist before any wasm runs (desktop ships it as the installed app). It uses
- * the CipSoft package.json contract of PackageClient: files[].url relative to
+ * the CipSoft package.json contract (the launcher's TPackage): files[].url relative to
  * the package.json directory, packedhash / unpackedhash / unpackedsize checked,
  * package.json.version written last. Every other package (the client, CipSoft
  * assets) is the launcher's install.
