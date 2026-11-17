@@ -4,14 +4,14 @@
  *
  * The portal installs one package itself: the launcher binary, which must
  * exist before any wasm runs (desktop ships it as the installed app). It uses
- * the CipSoft package.json contract of PackageClient: files[].url relative to
+ * the CipSoft package.json contract (the launcher's TPackage): files[].url relative to
  * the package.json directory, packedhash / unpackedhash / unpackedsize checked,
  * package.json.version written last. Every other package (the client, CipSoft
  * assets) is the launcher's install.
  */
 import { packageFsRoot } from './cip-fs.js';
 import { unpackLzmaAlone } from './lzma-alone.js';
-import { qtclientFs } from './qtclient-fs/bridge.js';
+import { readFile, writeFile } from './opfs.js';
 
 export type CipFileRec = {
 	url: string;
@@ -52,31 +52,25 @@ async function fetchPackageDoc(packageBase: string): Promise<CipPackageDoc> {
 }
 
 /**
- * Install a tip package's `localfiles` into OPFS unless its
- * package.json.version already matches the tip.
+ * Install a tip package into OPFS, every file, unless its package.json.version
+ * already matches the tip — what the desktop installer does for the launcher.
  */
 export async function ensurePackage(opts: {
 	packageName: string;
 	packageBase: string;
-	localfiles: string[];
 	onProgress?: (p: PackageProgress) => void;
 }): Promise<{ version: string; fromCache: boolean }> {
 	const { packageName, onProgress } = opts;
 	const packageBase = opts.packageBase.replace(/\/+$/, '');
 	const root = packageFsRoot(packageName);
-	const fs = await qtclientFs();
 	onProgress?.({ label: 'Checking package version…', progress: 5 });
 	const doc = await fetchPackageDoc(packageBase);
-	const local = await fs.readFileAsync(`${root}/package.json.version`);
+	const local = await readFile(`${root}/package.json.version`);
 	if (local && new TextDecoder().decode(local).trim() === doc.version) {
 		return { version: doc.version, fromCache: true };
 	}
 
-	const files = doc.files.filter((f) => opts.localfiles.includes(f.localfile));
-	if (files.length !== opts.localfiles.length)
-		throw new Error(
-			`${packageName}: package.json lacks ${opts.localfiles.join(', ')}`,
-		);
+	const files = doc.files;
 	const totalPacked =
 		files.reduce((s, f) => s + Math.max(f.packedsize, 0), 0) || 1;
 	let donePacked = 0;
@@ -100,16 +94,16 @@ export async function ensurePackage(opts: {
 			(await sha256Hex(unpacked)) !== file.unpackedhash
 		)
 			throw new Error(`unpacked hash/size mismatch for ${file.localfile}`);
-		await fs.writeFileAsync(`${root}/${file.localfile}`, unpacked);
+		await writeFile(`${root}/${file.localfile}`, unpacked);
 		donePacked += Math.max(file.packedsize, 0);
 	}
 	const text = new TextEncoder();
-	await fs.writeFileAsync(
+	await writeFile(
 		`${root}/package.json`,
 		text.encode(`${JSON.stringify(doc, null, 2)}\n`),
 	);
 	// Version last: it marks the package complete.
-	await fs.writeFileAsync(
+	await writeFile(
 		`${root}/package.json.version`,
 		text.encode(`${doc.version}\n`),
 	);
@@ -117,13 +111,13 @@ export async function ensurePackage(opts: {
 	return { version: doc.version, fromCache: false };
 }
 
-/** One installed package file (the engine binaries the portal boots). */
-export async function readPackageFile(
-	packageName: string,
-	localfile: string,
+/** An installed engine file, in the directory of the program being started. */
+export async function readEngineFile(
+	program: string,
+	name: string,
 ): Promise<ArrayBuffer> {
-	const path = `${packageFsRoot(packageName)}/${localfile}`;
-	const bytes = await (await qtclientFs()).readFileAsync(path);
+	const path = `${program.slice(0, program.lastIndexOf('/'))}/${name}`;
+	const bytes = await readFile(path);
 	if (!bytes)
 		throw new Error(`Missing ${path} — install via the launcher first.`);
 	return bytes.buffer as ArrayBuffer;

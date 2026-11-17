@@ -8,6 +8,9 @@
  *   `minidump-stackwalk --symbols-path` reads.
  * - WASM source map (`*.wasm.map`, Emscripten `-gsource-map`): needs a
  *   `revision` field; stored as `wasm/<revision>/<file>`.
+ * - WASM symbol map (`tibia.wasm.symbols`, Emscripten `--emit-symbol-map`):
+ *   function index → name; needs a `revision` field. JSC (Safari) stacks only
+ *   carry `wasm-function[N]`, so this is what names /play frames there.
  */
 import { createReadStream, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -17,6 +20,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { prisma } from '#lib/server/prisma.js';
 import { symbolMaxBytes, symbolsDir, symbolUploadToken } from '#lib/server/telemetry/config.js';
 import { reprocessUnsymbolicated } from '#lib/server/telemetry/process.js';
+import { forgetSymbols } from '#lib/server/telemetry/symbolicate.js';
 
 const SAFE = /^[A-Za-z0-9._+-]{1,200}$/;
 
@@ -62,7 +66,7 @@ export async function uploadSymbols(request: Request): Promise<Response> {
 
 async function storeSymbol(tmp: string, name: string, form: FormData): Promise<Response> {
 
-	let kind: 'breakpad' | 'sourcemap';
+	let kind: 'breakpad' | 'sourcemap' | 'symbolmap';
 	let debugId: string;
 	let codeFile: string;
 	let os: string | null = null;
@@ -78,6 +82,17 @@ async function storeSymbol(tmp: string, name: string, form: FormData): Promise<R
 		debugId = revision;
 		codeFile = name.replace(/\.map$/, '');
 		rel = join('wasm', revision, name);
+	} else if (name.endsWith('.symbols')) {
+		// Emscripten --emit-symbol-map, named after its module: `tibia.wasm.symbols`
+		// (emcc writes `tibia.js.symbols`; both map to `tibia.wasm`).
+		const revision = String(form.get('revision') ?? '').trim();
+		if (!SAFE.test(revision) || !SAFE.test(name)) {
+			return new Response('symbol maps need a safe `revision` and file name', { status: 400 });
+		}
+		kind = 'symbolmap';
+		debugId = revision;
+		codeFile = name.replace(/\.symbols$/, '').replace(/\.js$/, '.wasm');
+		rel = join('wasm', revision, `${codeFile}.symbols`);
 	} else {
 		const head = (await firstLine(tmp)).trim().split(/\s+/);
 		if (head[0] !== 'MODULE' || head.length < 5) {
@@ -103,6 +118,7 @@ async function storeSymbol(tmp: string, name: string, form: FormData): Promise<R
 		create: { kind, debug_id: debugId, code_file: codeFile, os, arch, path: rel, size },
 		update: { os, arch, path: rel, size, uploaded_at: new Date() },
 	});
+	if (kind !== 'breakpad') forgetSymbols(debugId);
 	const requeued = await reprocessUnsymbolicated();
 	return Response.json({ kind, debugId, codeFile, size, requeued }, { status: 201 });
 }

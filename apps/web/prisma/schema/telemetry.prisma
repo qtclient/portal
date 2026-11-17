@@ -49,7 +49,7 @@ model CrashGroup {
 model SymbolFile {
   id          String   @id @default(cuid())
   uploaded_at DateTime @default(now())
-  /// breakpad | sourcemap
+  /// breakpad | sourcemap | symbolmap
   kind        String   @db.VarChar(16)
   /// Breakpad debug id, or the client revision for source maps.
   debug_id    String   @db.VarChar(64)

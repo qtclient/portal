@@ -1,7 +1,7 @@
 /**
  * Browser boot for the qtclient wasm engines on /play (launcher + game).
  * Loads the engine glue + qtloader into the /play document (no iframe), hands
- * C++ the page's qtclient-fs (OPFS Worker), stages the tip, then starts main.
+ * stages the tip pack, then starts main (which mounts OPFS with its own Worker).
  */
 import { playEnv } from '$pack/play.client';
 
@@ -9,16 +9,17 @@ import {
 	CIP_HOME,
 	CLIENT_NAME,
 	CLIENT_PACK_ID,
-	PACKAGE_CLIENT,
 	PACKAGE_LAUNCHER,
+	isInstalledProgram,
 	packageFsRoot,
 } from './cip-fs.js';
 import {
 	ensurePackage,
 	type PackageProgress,
-	readPackageFile,
+	readEngineFile,
 } from './cip-package.js';
 import { reportBrowserCrash } from './crash-report';
+import { closeOpfsWriter } from './opfs.js';
 import { createListenerBag } from './otc/dom-util';
 import {
 	clearOtcRemountCount,
@@ -26,12 +27,10 @@ import {
 	otcWasmAlreadyLoaded,
 	reloadForOtcRemount,
 } from './otc/wasm-guard';
-import { diag, diagFlush, diagWarn } from './play-diag';
-import { type QtclientFs, qtclientFs } from './qtclient-fs/bridge.js';
+import { diag, diagWarn } from './play-diag';
 import { attachViewMagnify } from './view-magnify';
 
 /** The client package the launcher installs (tip `directoryname`). */
-const PACKAGE_ROOT = packageFsRoot(PACKAGE_CLIENT);
 
 /**
  * sessionStorage: qtclient Play → game remount (Emscripten cannot re-init in-page).
@@ -41,14 +40,6 @@ export const PLAY_HANDOFF_KEY = 'tibia.play';
 /** Keep the launching overlay across the remount navigation. */
 export const PLAY_TRANSITION_KEY = 'tibia.play.transition';
 
-export const LAUNCHER_ENGINE_FILES = [
-	'launcher.js',
-	'launcher.wasm',
-	'qtloader.js',
-	'package.json',
-	'package.json.version',
-] as const;
-
 export type TibiaBootOptions = {
 	/**
 	 * Tip dir with engine bytes + qtloader.js.
@@ -56,17 +47,12 @@ export type TibiaBootOptions = {
 	 */
 	wasmBase: string;
 	revision: string;
-	/**
-	 * qtclient assemble tip that carries mods/<pack> (release.json targets.web.wasm).
-	 * Engine package may live under launcher/tibiaclient-web-current without the pack.
-	 */
-	packWasmBase?: string;
 	/** Busts the browser engine cache after a local wasm rebuild. */
 	engineStamp?: string;
 	assetBase: string;
 	/**
 	 * Which engine package / Emscripten entry to boot.
-	 * qtclient chrome = `launcher` (Widgets-only); game = `tibia` (QML).
+	 * `launcher` = CipSoft's launcher (Widgets); game = `tibia` (QML).
 	 */
 	engine?: 'launcher' | 'tibia';
 	/**
@@ -74,6 +60,11 @@ export type TibiaBootOptions = {
 	 * boot game UI only (`QTCLIENT_WASM_SKIP_LAUNCHER=1`). Only for `engine: 'tibia'`.
 	 */
 	skipLauncher?: boolean;
+	/**
+	 * The client program the launcher started (`engine: 'tibia'`): argv[0], and
+	 * its directory holds tibia.wasm / tibia.data / qtloader.js.
+	 */
+	clientProgram?: string;
 	onStatus?: (text: string, progress: number) => void;
 	/** WASM Module onLoaded — may fire before tip page-in / callMain. */
 	onReady?: () => void;
@@ -212,7 +203,8 @@ export function installGameKeyGuard(): () => void {
 type TibiaModule = {
 	ENV?: Record<string, string>;
 	callMain: (args?: string[]) => void;
-	qtclientFs?: QtclientFs;
+	/** qtclient browser/qtclient-fs.js — the engine's OPFS Worker. */
+	qtclientFs?: { stats(): Promise<QtclientFsWorkerStats> };
 	/** browser/wasm_heap_stats.cpp — publishes Module.qtclientHeap. */
 	_qtclient_heap_stats_publish?: () => void;
 	qtclientHeap?: Record<string, number>;
@@ -220,19 +212,20 @@ type TibiaModule = {
 	_qtclient_fs_stats_publish?: () => void;
 	/** Main-thread file system calls and the time main spent in them. */
 	qtclientFsMain?: { calls: number; ms: number };
-	/** browser/jspi-runtime.js state. */
-	qtclientJspi?: { parked: number; posted: number };
 };
 
-/**
- * Launcher + game: hand the page's qtclient-fs (OPFS Worker) to C++ as
- * Module.qtclientFs. main() attaches to it and mounts the WasmFS OPFS backend
- * at /home/web_user (qtclient browser/qtclient_opfs_backend.cpp).
- */
-async function mountQtclientFs(instance: TibiaModule): Promise<void> {
-	instance.qtclientFs = await qtclientFs();
-	diag('qtclient-fs ready for wasm', { home: CIP_HOME, mods: '/mods' });
-}
+type QtclientFsWorkerStats = {
+	stats: {
+		calls: number;
+		ms: number;
+		bytesRead: number;
+		bytesWritten: number;
+		byOp: Record<string, { calls: number; ms: number }>;
+	};
+	openHandles: number;
+	idleHandles: number;
+	nodes: number;
+};
 
 type QtLoadConfig = {
 	locateFile?: (path: string) => string;
@@ -243,6 +236,8 @@ type QtLoadConfig = {
 	 * even with CORS.
 	 */
 	mainScriptUrlOrBlob?: string | Blob;
+	/** Emscripten argv[0]: Qt's applicationFilePath() (must exist). */
+	thisProgram?: string;
 	monitorRunDependencies?: (left: number) => void;
 	/**
 	 * Prefer this over `qt.module`: qtloader's async instantiateWasm returns a
@@ -351,13 +346,17 @@ export function acquirePlayLock(): Promise<boolean> {
 	});
 }
 
-export function takePlayHandoff(): boolean {
+/**
+ * The program the launcher started (its `startDetached` on the web stores the
+ * path, from the client package's `executable`), or null to boot the launcher.
+ */
+export function takePlayHandoff(): string | null {
 	try {
-		const flagged = sessionStorage.getItem(PLAY_HANDOFF_KEY) === '1';
+		const program = sessionStorage.getItem(PLAY_HANDOFF_KEY);
 		sessionStorage.removeItem(PLAY_HANDOFF_KEY);
-		return flagged;
+		return program && isInstalledProgram(program) ? program : null;
 	} catch {
-		return false;
+		return null;
 	}
 }
 
@@ -418,8 +417,8 @@ export function hidePlayTransition(): void {
 }
 
 /**
- * Install the launcher tip (launcher.js / .wasm, the desktop launcher's
- * Widgets-only binary) into OPFS packages/LAUNCHER/ for /play.
+ * Install the launcher package (launcher.js / .wasm: CipSoft's launcher, the
+ * same classes as desktop) into OPFS packages/LAUNCHER/ for /play.
  */
 export async function bootstrapLauncherPackage(
 	cdn: string,
@@ -429,7 +428,6 @@ export async function bootstrapLauncherPackage(
 	return ensurePackage({
 		packageName: PACKAGE_LAUNCHER,
 		packageBase: base,
-		localfiles: ['launcher.js', 'launcher.wasm', 'qtloader.js'],
 		onProgress,
 	});
 }
@@ -530,92 +528,6 @@ export function applyProductPlayCss(opts: {
 	tryNext();
 }
 
-/**
- * Stage mods/<pack> onto durable qtclient-fs OPFS before callMain.
- * Warm tip: reuse OPFS pack cache. Cold: fetch from CDN tip → OPFS `/mods/<pack>`.
- */
-/**
- * Stage the tip's client pack (`mods/<pack>`) from the release's web wasm tip
- * (release.json targets.web.wasm). `.pack.stamp` fingerprints the tip pack; a
- * matching stamp on OPFS means it is already staged.
- */
-async function stageTipPack(
-	packWasmBase: string | undefined,
-	stamp: string | undefined,
-	onStatus?: (text: string, progress: number) => void,
-): Promise<number> {
-	if (!packWasmBase)
-		throw new Error(
-			`release.json has no web wasm tip for mods/${CLIENT_PACK_ID}`,
-		);
-	const stampRes = await fetch(
-		wasmUrl(packWasmBase, `mods/${CLIENT_PACK_ID}/.pack.stamp`, stamp),
-	);
-	if (!stampRes.ok)
-		throw new Error(
-			`mods/${CLIENT_PACK_ID}/.pack.stamp HTTP ${stampRes.status}`,
-		);
-	const tipStamp = (await stampRes.text()).trim();
-	const fs = await qtclientFs();
-	const stagedBytes = await fs.readFileAsync(
-		`/mods/${CLIENT_PACK_ID}/.pack.stamp`,
-	);
-	const staged = stagedBytes && new TextDecoder().decode(stagedBytes).trim();
-	if (staged === tipStamp) {
-		diagFlush('stageTipPack already staged', {
-			packStamp: tipStamp.slice(0, 16),
-		});
-		onStatus?.('Launching client…', 92);
-		return 0;
-	}
-	onStatus?.('Updating…', 90);
-	const listRes = await fetch(
-		wasmUrl(packWasmBase, `mods/${CLIENT_PACK_ID}.files`, stamp),
-	);
-	if (!listRes.ok)
-		throw new Error(`mods/${CLIENT_PACK_ID}.files HTTP ${listRes.status}`);
-	const files = (await listRes.text())
-		.split(/\r?\n/)
-		.map((l) => l.trim())
-		.filter((l) => l && !l.startsWith('#') && l !== '.pack.stamp')
-		.filter((l) => !l.startsWith('native/') && !l.startsWith('lib/'));
-	if (files.length === 0)
-		throw new Error(`mods/${CLIENT_PACK_ID}.files is empty`);
-	// Pack files are small and many: fetch a few at a time so the round trips
-	// overlap. The FS worker serialises the writes itself.
-	const PACK_FETCH_CONCURRENCY = 8;
-	let next = 0;
-	let n = 0;
-	const worker = async () => {
-		while (next < files.length) {
-			const rel = files[next++];
-			const res = await fetch(
-				wasmUrl(packWasmBase, `mods/${CLIENT_PACK_ID}/${rel}`, stamp),
-			);
-			if (!res.ok) throw new Error(`pack file HTTP ${res.status}: ${rel}`);
-			await fs.writeFileAsync(
-				`/mods/${CLIENT_PACK_ID}/${rel}`,
-				new Uint8Array(await res.arrayBuffer()),
-			);
-			n += 1;
-			if (n % 16 === 0) onStatus?.('Updating…', 90 + Math.min(5, n / 40));
-		}
-	};
-	await Promise.all(
-		Array.from(
-			{ length: Math.min(PACK_FETCH_CONCURRENCY, files.length) },
-			worker,
-		),
-	);
-	// Stamp last: it marks the staged tree complete.
-	await fs.writeFileAsync(
-		`/mods/${CLIENT_PACK_ID}/.pack.stamp`,
-		new TextEncoder().encode(tipStamp),
-	);
-	diagFlush('stageTipPack staged', { wasmBase: packWasmBase, files: n });
-	return n;
-}
-
 function crashText(text: string | undefined): string {
 	const detail = (text ?? '').trim();
 	if (!detail) return 'The game stopped unexpectedly. Reload to try again.';
@@ -659,6 +571,9 @@ function loginEnvironment(opts: TibiaBootOptions): Record<string, string> {
 		QTCLIENT_CLIENTSERVICES_PATH: '/clientservices/clientservices.php',
 		QTCLIENT_CREATE_ACCOUNT_PATH:
 			'/clientservices/accountcreationclientservices.php',
+		// The launcher's hardware survey, same origin as login (a stamped
+		// www./apex site is cross-origin from the other host).
+		QTCLIENT_SYSTEM_SURVEY_URL: `${location.origin}/clientservices/hardwarereceiver.php`,
 	};
 	if (origin.port) env.QTCLIENT_LOGIN_PORT = origin.port;
 	if (opts.skipLauncher) env.QTCLIENT_WASM_SKIP_LAUNCHER = '1';
@@ -668,6 +583,10 @@ function loginEnvironment(opts: TibiaBootOptions): Record<string, string> {
 		const q = new URLSearchParams(location.search);
 		const r = q.get('qtclient_renderer');
 		if (r) env.QTCLIENT_RENDERER = r;
+		// Diagnostics: Qt logging rules, e.g. ?qtclient_log=tibia.download.debug=true
+		// (the launcher's per-file download lines; off by default).
+		const log = q.get('qtclient_log');
+		if (log) env.QT_LOGGING_RULES = log.replaceAll(',', ';');
 	} catch {
 		/* ignore */
 	}
@@ -679,9 +598,6 @@ function loginEnvironment(opts: TibiaBootOptions): Record<string, string> {
 			err: err instanceof Error ? err.message : String(err),
 		});
 	}
-	// Stage writes /mods/<pack>; without this, tipModsRoots can pick
-	// "/../mods/<pack>" on WASM ("/" + ../mods) and product chrome misses.
-	if (CLIENT_PACK_ID) env.QTCLIENT_MODS_DIR = `/mods/${CLIENT_PACK_ID}`;
 	return env;
 }
 
@@ -695,11 +611,16 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 	const launcherEngine = callbacks.engine === 'launcher';
 	const jsName = launcherEngine ? 'launcher.js' : 'tibia.js';
 	const wasmName = launcherEngine ? 'launcher.wasm' : 'tibia.wasm';
-	// Both engines run from their installed package: the launcher's (the
-	// portal installs it, bootstrapLauncherPackage) and the client's (the
-	// launcher installs it, like CipSoft's launcher starting the client).
-	const enginePackage = launcherEngine ? PACKAGE_LAUNCHER : PACKAGE_CLIENT;
-	const engineFile = (name: string) => readPackageFile(enginePackage, name);
+	// Both engines run from their installed package, argv[0] inside it: the
+	// launcher's (the portal installs it, bootstrapLauncherPackage) and the
+	// client's, at the path the launcher started (its package's `executable`).
+	// applicationDirPath() is then the program's directory, as on desktop.
+	const thisProgram = launcherEngine
+		? `${packageFsRoot(PACKAGE_LAUNCHER)}/${jsName}`
+		: callbacks.clientProgram;
+	if (!thisProgram)
+		throw new Error('No client program to start — open the launcher.');
+	const engineFile = (name: string) => readEngineFile(thisProgram, name);
 	const scriptAttr = launcherEngine ? 'launcher' : 'tibia';
 
 	diag('bootTibia', {
@@ -735,14 +656,15 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 				maxFootprint: mb(h.mallocMaxFootprint),
 				stack: mb(h.stackSize),
 			},
-			jspi: mod.qtclientJspi ? { posted: mod.qtclientJspi.posted } : null,
 		};
 	};
-	/** Heap snapshot + the qtclient-fs Worker's counters (async: asks the Worker). */
+	/** Heap snapshot + the engine's qtclient-fs Worker counters. */
 	const logHeapAndFs = async (label: string) => {
 		const snap = wasmHeapSnap();
 		try {
-			const w = await (await qtclientFs()).statsAsync();
+			const fs = liveModule?.qtclientFs;
+			if (!fs) throw new Error('engine has no qtclient-fs');
+			const w = await fs.stats();
 			const top = Object.entries(w.stats.byOp)
 				.sort((a, b) => b[1].ms - a[1].ms)
 				.slice(0, 6)
@@ -797,6 +719,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 					: `${ev.filename}:${ev.lineno}:${ev.colno}`,
 			stage: 'window.onerror',
 			revision: callbacks.revision,
+			extra: { engine: wasmName },
 		});
 		diagWarn('window.onerror', {
 			message: ev.message,
@@ -815,6 +738,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 			stack: reason instanceof Error ? reason.stack : null,
 			stage: 'unhandledrejection',
 			revision: callbacks.revision,
+			extra: { engine: wasmName },
 		});
 		diagWarn('unhandledrejection', {
 			err:
@@ -940,7 +864,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 			);
 			const engineDir = sameOriginEngineDir(tipEngineJs);
 			// Same-origin Blob so pthread Workers can load the engine script.
-			// The glue runs as built: JSPI contract is browser/jspi-runtime.js.
+			// The glue runs as built (no patching).
 			diag('engine script', {
 				tipEngineJs,
 				engineDir,
@@ -953,13 +877,6 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 				launcherEngine ? 'Starting qtclient…' : 'Starting client…',
 				55,
 			);
-			// Qt GUI main never returns: under JSPI callMain's Promise stays
-			// pending for the process lifetime. The tip qtloader.js parks an async
-			// frame on it (the kit names it `__<brand>MainPark`) so qtLoad resolves
-			// and the promising activation stays alive. Without it /play hangs.
-			if (!/__\w*MainPark\b/.test(new TextDecoder().decode(loaderBytes))) {
-				throw new Error('tip qtloader.js lacks the JSPI main park');
-			}
 			await loadScriptFromBytes(loaderBytes);
 			diag('qtloader.js script loaded', {
 				bytes: loaderBytes.byteLength,
@@ -991,33 +908,14 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 				_config: unknown,
 			): Promise<TibiaModule> => {
 				callbacks.onStatus?.('Preparing…', 80);
-				await mountQtclientFs(instance);
 				const skipLauncher = !launcherEngine && !!callbacks.skipLauncher;
-				try {
-					const staged = CLIENT_PACK_ID
-						? await stageTipPack(
-								callbacks.packWasmBase,
-								callbacks.engineStamp,
-								callbacks.onStatus,
-							)
-						: 0;
-					diag('stageTipPack', { files: staged });
-					applyProductPlayCss({
-						assetBase: callbacks.assetBase,
-						packWasmBase: callbacks.packWasmBase,
-						engineStamp: callbacks.engineStamp,
-					});
-				} catch (err) {
-					const msg = err instanceof Error ? err.message : String(err);
-					diagWarn('tip pack stage failed', { msg });
-					callbacks.onFatal?.(`Couldn't stage tip pack: ${msg}`);
-					throw err;
-				}
+				// The engine's own qtclient-fs Worker owns OPFS from main() on.
+				closeOpfsWriter();
 				// Assets are the launcher's job (CipSoft assets.json into the
 				// package, like desktop); the game trusts its install.
 				diag('tip ready → callMain', {
 					home: CIP_HOME,
-					packageRoot: PACKAGE_ROOT,
+					program: thisProgram,
 					skipLauncher,
 				});
 				callbacks.onStatus?.(
@@ -1043,7 +941,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 									: new Error(String(reason)).stack,
 							stage: 'wasm.onAbort',
 							revision: callbacks.revision,
-							extra: wasmHeapSnap(),
+							extra: { engine: wasmName, ...wasmHeapSnap() },
 						});
 						diagWarn('wasm onAbort', {
 							reason: reason instanceof Error ? reason.message : String(reason),
@@ -1072,6 +970,14 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 							try {
 								return await prevMain(args);
 							} catch (err) {
+								reportBrowserCrash({
+									name: err instanceof Error ? err.name : 'Error',
+									message: err instanceof Error ? err.message : String(err),
+									stack: err instanceof Error ? err.stack : null,
+									stage: 'callMain',
+									revision: callbacks.revision,
+									extra: { engine: wasmName, ...wasmHeapSnap() },
+								});
 								diagWarn('callMain throw', {
 									name: err instanceof Error ? err.name : null,
 									message: err instanceof Error ? err.message : String(err),
@@ -1104,6 +1010,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 					return wasmUrl(base, path, callbacks.engineStamp);
 				},
 				mainScriptUrlOrBlob,
+				thisProgram,
 				// Do NOT use qt.module — qtloader's `async instantiateWasm`
 				// returns a Promise that Emscripten waits on forever while also
 				// using successCallback (runDeps stuck at wasm-instantiate).

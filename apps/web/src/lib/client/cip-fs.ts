@@ -25,12 +25,14 @@ const CIP_APPDATA = `${CIP_HOME}/.local/share/${BRAND.org}/${BRAND.name}`;
 
 /** The launcher's own package (installed by the portal, see cip-package.ts). */
 export const PACKAGE_LAUNCHER = 'LAUNCHER';
-/**
- * Tip `directoryname` of the client package. CipSoft: `Tibia.app`; packs
- * override it with `client.packageDir`.
- */
-export const PACKAGE_CLIENT = BRAND.packageDir;
-
 export function packageFsRoot(name: string): string {
 	return `${CIP_APPDATA}/packages/${name}`;
+}
+
+/**
+ * Where CipSoft's AppData ends: a program the launcher starts must live under
+ * `<AppData>/packages/` (the launcher installs every package there).
+ */
+export function isInstalledProgram(path: string): boolean {
+	return path.startsWith(`${CIP_APPDATA}/packages/`) && !path.includes('/../');
 }

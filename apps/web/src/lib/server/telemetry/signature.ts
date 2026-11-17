@@ -7,6 +7,8 @@ export type Frame = {
 	line?: number | null;
 	/** Hex offset inside the module when unsymbolicated. */
 	offset?: string | null;
+	/** WASM function index (`wasm-function[N]`), resolved through the symbol map. */
+	index?: number | null;
 };
 
 const SIGNATURE_FRAMES = 5;

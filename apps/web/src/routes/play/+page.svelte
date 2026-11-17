@@ -43,7 +43,8 @@
 			throw new Error(
 				'The game is already open in another tab or window. Close it, then reload this page.',
 			);
-		const skipLauncher = takePlayHandoff();
+		const clientProgram = takePlayHandoff();
+		const skipLauncher = clientProgram !== null;
 		const launcherBoot = !skipLauncher;
 		try {
 			sessionStorage.setItem(PLAY_TRANSITION_KEY, '1');
@@ -107,10 +108,10 @@
 			engine: launcherBoot ? 'launcher' : 'tibia',
 			wasmBase,
 			revision,
-			packWasmBase,
 			engineStamp,
 			assetBase,
 			skipLauncher,
+			clientProgram: clientProgram ?? undefined,
 			onStatus(text, progress) {
 				updatePlayTransition(text, progress);
 			},
