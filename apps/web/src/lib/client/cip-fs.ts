@@ -34,3 +34,15 @@ export const PACKAGE_CLIENT = BRAND.packageDir;
 export function packageFsRoot(name: string): string {
 	return `${CIP_APPDATA}/packages/${name}`;
 }
+
+/**
+ * Where each package keeps its engine (`tibia.js` / `launcher.js`): the client
+ * package has the macOS bundle layout (engine in Contents/MacOS, as CipSoft's
+ * Contents/MacOS/client), the launcher's is flat. The engine runs with argv[0]
+ * there, so its applicationDirPath() is that directory, as on desktop.
+ */
+export function packageEngineDir(name: string): string {
+	return name === PACKAGE_LAUNCHER
+		? packageFsRoot(name)
+		: `${packageFsRoot(name)}/Contents/MacOS`;
+}

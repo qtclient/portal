@@ -53,8 +53,8 @@ export default defineConfig({
 });
 ```
 
-`client.packId` is the tip pack staged under `mods/<id>/` for `/play` (null for
-a stock tip). Browser storage is namespaced by it, so keep it stable.
+`client.packId` is the tip pack id (`mods/<id>/` inside the web client and
+launcher packages, as next to the desktop binary; null for a stock tip). Browser storage is namespaced by it, so keep it stable.
 
 ## Hooks (`lib/hooks.server.ts`)
 

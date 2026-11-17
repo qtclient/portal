@@ -1,10 +1,9 @@
 /**
  * The portal's own OPFS access on /play, before an engine runs: the launcher
- * package install, engine bytes and the tip pack stage.
+ * package install and the engine bytes.
  *
- * Paths are the wasm's: `/home/web_user/<rel>` is OPFS `<rel>`, and
- * `/mods/<rel>` (a symlink to /home/web_user/mods in the wasm) is OPFS
- * `mods/<rel>`. Once an engine runs, its own qtclient-fs Worker owns OPFS
+ * Paths are the wasm's: `/home/web_user/<rel>` is OPFS `<rel>`. Once an engine
+ * runs, its own qtclient-fs Worker owns OPFS
  * (qtclient browser/qtclient-fs.js); call {@link closeOpfsWriter} before.
  *
  * Reads are File snapshots on the page's thread: they need no access handle,
@@ -16,12 +15,9 @@
 const HOME = '/home/web_user';
 
 function opfsPath(path: string): string[] {
-	let rel: string;
-	if (path === HOME || path.startsWith(`${HOME}/`))
-		rel = path.slice(HOME.length);
-	else if (path === '/mods' || path.startsWith('/mods/')) rel = path;
-	else throw new Error(`opfs: path outside /home/web_user and /mods: ${path}`);
-	return rel.split('/').filter(Boolean);
+	if (path !== HOME && !path.startsWith(`${HOME}/`))
+		throw new Error(`opfs: path outside ${HOME}: ${path}`);
+	return path.slice(HOME.length).split('/').filter(Boolean);
 }
 
 async function fileHandle(path: string): Promise<FileSystemFileHandle | null> {
