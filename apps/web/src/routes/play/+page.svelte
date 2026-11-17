@@ -107,7 +107,6 @@
 			engine: launcherBoot ? 'launcher' : 'tibia',
 			wasmBase,
 			revision,
-			packWasmBase,
 			engineStamp,
 			assetBase,
 			skipLauncher,

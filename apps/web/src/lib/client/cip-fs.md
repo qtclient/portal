@@ -4,12 +4,12 @@ CipSoft AppData root is Qt `QStandardPaths::AppDataLocation` after the tip's org
 names (`<Org>` / `<App>`, pack `client.org` / `client.name`) — one API for every OS (no hardcoded Application Support /
 AppData / `.local/share` in C++).
 
-| Surface                           | CipSoft AppData root                                         | Client package                     | Launcher                                    |
-| --------------------------------- | ------------------------------------------------------------ | ---------------------------------- | ------------------------------------------- |
-| macOS                             | `~/Library/Application Support/<Org>/<App>/`                 | `packages/<PACKAGE_CLIENT>/`       | `/Applications/<App>.app` (bootstrap only)   |
-| Windows                           | `%APPDATA%\<Org>\<App>\`                                     | `packages/<PACKAGE_CLIENT>/`       | installer `<App>.exe`                       |
-| Linux                             | `~/.local/share/<Org>/<App>/`                                | `packages/<PACKAGE_CLIENT>/`       | AppImage / binary                           |
-| Browser OPFS                      | `/home/web_user/.local/share/<Org>/<App>/` (`CIP_APPDATA`)   | `packages/<PACKAGE_CLIENT>/`       | `packages/LAUNCHER/` (`launcher.wasm`)      |
+| Surface      | CipSoft AppData root                                       | Client package               | Launcher                                   |
+| ------------ | ---------------------------------------------------------- | ---------------------------- | ------------------------------------------ |
+| macOS        | `~/Library/Application Support/<Org>/<App>/`               | `packages/<PACKAGE_CLIENT>/` | `/Applications/<App>.app` (bootstrap only) |
+| Windows      | `%APPDATA%\<Org>\<App>\`                                   | `packages/<PACKAGE_CLIENT>/` | installer `<App>.exe`                      |
+| Linux        | `~/.local/share/<Org>/<App>/`                              | `packages/<PACKAGE_CLIENT>/` | AppImage / binary                          |
+| Browser OPFS | `/home/web_user/.local/share/<Org>/<App>/` (`CIP_APPDATA`) | `packages/<PACKAGE_CLIENT>/` | `packages/LAUNCHER/` (`launcher.wasm`)     |
 
 Emscripten **home** / OPFS tip is `/home/web_user` (`CIP_HOME`). CipSoft
 AppData is the XDG path under that home (same formula as Linux desktop) —
@@ -24,7 +24,8 @@ Under CipSoft AppData:
 
 ```text
 <AppDataLocation>/
-  packages/<PACKAGE_CLIENT>/Contents/MacOS/client
+  packages/<PACKAGE_CLIENT>/Contents/MacOS/client     # web: tibia.{js,wasm}, qtloader.js
+  packages/<PACKAGE_CLIENT>/Contents/MacOS/mods/<id>/ # tip pack, next to the binary
   packages/<PACKAGE_CLIENT>/Contents/Resources/{assets,sounds,minimap}
   minimap/                 # user + CipSoft-seeded tiles
   log/
@@ -36,9 +37,11 @@ Under CipSoft AppData:
 
 `/play` matches desktop’s two-binary ship:
 
-1. Portal: progress, the launcher package (`launcher-web-current` →
-   `packages/LAUNCHER/`, the desktop app install) and the tip pack stage
-   (`mods/<pack>/`), through `opfs.ts`. No CIP chrome in Svelte.
+1. Portal: progress and the launcher package (`launcher-web-current` →
+   `packages/LAUNCHER/`, every file, as the desktop installer lays it down:
+   the engine plus `mods/<id>/` brand), through `opfs.ts`. No CIP chrome in
+   Svelte. Each engine runs with argv[0] (`thisProgram`) inside its package,
+   so `applicationDirPath()` finds `mods/` and `../Resources` as on desktop.
    Each engine then mounts OPFS itself: its `main()` starts the engine's own
    qtclient-fs Worker (qtclient `browser/qtclient-fs.js`), the only OPFS
    client while it runs.
