@@ -564,6 +564,9 @@ function loginEnvironment(opts: TibiaBootOptions): Record<string, string> {
 		QTCLIENT_CLIENTSERVICES_PATH: '/clientservices/clientservices.php',
 		QTCLIENT_CREATE_ACCOUNT_PATH:
 			'/clientservices/accountcreationclientservices.php',
+		// The launcher's hardware survey, same origin as login (a stamped
+		// www./apex site is cross-origin from the other host).
+		QTCLIENT_SYSTEM_SURVEY_URL: `${location.origin}/clientservices/hardwarereceiver.php`,
 	};
 	if (origin.port) env.QTCLIENT_LOGIN_PORT = origin.port;
 	if (opts.skipLauncher) env.QTCLIENT_WASM_SKIP_LAUNCHER = '1';
