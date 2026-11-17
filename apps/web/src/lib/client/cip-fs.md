@@ -2,36 +2,27 @@
 
 CipSoft AppData root is Qt `QStandardPaths::AppDataLocation` after the tip's org/app
 names (`<Org>` / `<App>`, pack `client.org` / `client.name`) — one API for every OS (no hardcoded Application Support /
-AppData / `.local/share` in C++).
+AppData / `.local/share` in C++). On /play it is whatever Qt for wasm returns:
+the XDG path under the wasm HOME.
 
-| Surface      | CipSoft AppData root                                       | Client package               | Launcher                                   |
-| ------------ | ---------------------------------------------------------- | ---------------------------- | ------------------------------------------ |
-| macOS        | `~/Library/Application Support/<Org>/<App>/`               | `packages/<PACKAGE_CLIENT>/` | `/Applications/<App>.app` (bootstrap only) |
-| Windows      | `%APPDATA%\<Org>\<App>\`                                   | `packages/<PACKAGE_CLIENT>/` | installer `<App>.exe`                      |
-| Linux        | `~/.local/share/<Org>/<App>/`                              | `packages/<PACKAGE_CLIENT>/` | AppImage / binary                          |
-| Browser OPFS | `/home/web_user/.local/share/<Org>/<App>/` (`CIP_APPDATA`) | `packages/<PACKAGE_CLIENT>/` | `packages/LAUNCHER/` (`launcher.wasm`)     |
+| Surface      | CipSoft AppData root                                       | Client package         | Launcher                                   |
+| ------------ | ---------------------------------------------------------- | ---------------------- | ------------------------------------------ |
+| macOS        | `~/Library/Application Support/<Org>/<App>/`               | `packages/<dir>.app/`  | `/Applications/<App>.app` (bootstrap only) |
+| Windows      | `%LOCALAPPDATA%\<Org>\<App>\`                              | `packages/<dir>/`      | installer `<App>.exe`                      |
+| Linux        | `~/.local/share/<Org>/<App>/`                              | `packages/<dir>/`      | AppImage / binary                          |
+| Browser OPFS | `/home/web_user/.local/share/<Org>/<App>/` (`CIP_APPDATA`) | `packages/<dir>/`      | `packages/LAUNCHER/` (`launcher.wasm`)     |
 
-Emscripten **home** / OPFS tip is `/home/web_user` (`CIP_HOME`). CipSoft
-AppData is the XDG path under that home (same formula as Linux desktop) —
-packages do **not** live directly under HOME.
+`<dir>` is the tip's `directoryname` (CipSoft `Tibia`, IdleOT `IdleOT`); the
+launcher adds `.app` on macOS only. Inside each package the client follows
+CipSoft's layout for that OS (`docs/reverse-engineering/cip-package-layout.md`
+in the monorepo): `bin/` + `assets/` + `sounds/` on Linux, Windows and the
+browser package; `Contents/MacOS/` + `Contents/Resources/` on macOS. The
+client finds its Resources from its own location (CipSoft's
+`applicationDirPath/..` plus `Resources` when present), so nothing here or in
+C++ names a layout.
 
-`PACKAGE_CLIENT` (portal) / `CLIENT_PACKAGE_DIR` (cip_package) /
-`kClientPackageDir` (launcher C++) is the tip `directoryname` — CipSoft uses
-`Tibia.app`; a pack sets its own (`client.packageDir`). CipSoft Play executable basename inside
-the package is **`client`** (`Contents/MacOS/client`).
-
-Under CipSoft AppData:
-
-```text
-<AppDataLocation>/
-  packages/<PACKAGE_CLIENT>/Contents/MacOS/client     # web: tibia.{js,wasm}, qtloader.js
-  packages/<PACKAGE_CLIENT>/Contents/MacOS/mods/<id>/ # tip pack, next to the binary
-  packages/<PACKAGE_CLIENT>/Contents/Resources/{assets,sounds,minimap}
-  minimap/                 # user + CipSoft-seeded tiles
-  log/
-  screenshots/
-  launchermetadata.json
-```
+Emscripten **home** / OPFS tip is `/home/web_user` (`CIP_HOME`). Packages live
+under the AppData path, not directly under HOME.
 
 ## Browser CipSoft Play (sequential Modules)
 
@@ -41,17 +32,18 @@ Under CipSoft AppData:
    `packages/LAUNCHER/`, every file, as the desktop installer lays it down:
    the engine plus `mods/<id>/` brand), through `opfs.ts`. No CIP chrome in
    Svelte. Each engine runs with argv[0] (`thisProgram`) inside its package,
-   so `applicationDirPath()` finds `mods/` and `../Resources` as on desktop.
+   so `applicationDirPath()` is the program's directory, as on desktop.
    Each engine then mounts OPFS itself: its `main()` starts the engine's own
    qtclient-fs Worker (qtclient `browser/qtclient-fs.js`), the only OPFS
    client while it runs.
 2. `launcher.wasm` — Widgets Download/Update/Play. It installs the client
-   package and CipSoft `assets.json` (plus mods/minimap channels) into
-   `packages/<PACKAGE_CLIENT>/` exactly as on desktop.
-3. Play (or a warm, up-to-date install): the page reloads into `tibia.wasm`,
-   loaded from `packages/<PACKAGE_CLIENT>/` like CipSoft's launcher starting
-   the client — game-only QML (never Widgets + QML together).
+   package and CipSoft's asset list (plus mods/minimap channels) into
+   `packages/<dir>/` exactly as on desktop.
+3. Play: the launcher's `startDetached(program, …)` stores the program path
+   (its package's `executable`, e.g. `…/packages/IdleOT/bin/tibia.js`) in the
+   `tibia.play` handoff and reloads; the portal boots that program (argv[0])
+   and reads `tibia.wasm` / `tibia.data` / `qtloader.js` from its directory —
+   like CipSoft's launcher starting the client. Game-only QML (never Widgets +
+   QML together).
 
-Remount handoff: `tibia.play` /
-`tibia.play.transition`. Stale tips (wrong package name / layout): clear site
-data and re-Update.
+Remount handoff: `tibia.play` (program path) / `tibia.play.transition`.

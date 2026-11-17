@@ -48,7 +48,7 @@ export default defineConfig({
 		tagline: 'One line for the About page.',
 	},
 	// Must match how your qtclient tip was branded (launcher brand.json).
-	client: { name: 'MyServer', org: 'MyServer', packageDir: 'MyServer.app', packId: 'myserver' },
+	client: { name: 'MyServer', org: 'MyServer', packId: 'myserver' },
 	hosts: { www: 'www.example.com', static: 'static.example.com' },
 });
 ```
