@@ -14,7 +14,9 @@
  *   - application/json: browser/WASM report `{ message, name, stack, stage, revision }`.
  *
  * Hardware (CIP `fpsHistoryRecipient` → /clientservices/hardwarereceiver.php):
- *   JSON object or array. `dataType: "FPSHistory"` entries carry
+ *   JSON object or array. CIP's FPS document is `{ dataType: 1, clientID,
+ *   renderer, FPSHistory: [{ maxFPS, minFPS, averageFPS, timeStamp }] }`; it is
+ *   flattened into one entry per sample. `dataType: "FPSHistory"` entries carry
  *   `clientID`, `renderer`, `timeStamp` (`yyyy-MM-dd hh:mm:ss,zzz`),
  *   `averageFPS`, `minFPS`, `maxFPS`; anything else is kept as a system survey.
  */
@@ -175,6 +177,19 @@ function str(v: unknown, max = 255): string | null {
 	return typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
 }
 
+/** CIP TFPSHistoryToJsonConverter document → one `dataType: "FPSHistory"` entry per sample. */
+function fpsHistorySamples(e: HardwareEntry): HardwareEntry[] {
+	if (e.dataType !== 1 || !Array.isArray(e.FPSHistory)) return [e];
+	return e.FPSHistory.filter((s): s is HardwareEntry => !!s && typeof s === 'object').map((s) => ({
+		...s,
+		dataType: 'FPSHistory',
+		clientID: e.clientID,
+		renderer: e.renderer === undefined ? undefined : String(e.renderer),
+		platform: e.platform,
+		revision: e.revision,
+	}));
+}
+
 export async function ingestHardware(ctx: IngestContext): Promise<Response> {
 	const { request } = ctx;
 	if (!telemetryEnabled()) return noContent();
@@ -187,9 +202,9 @@ export async function ingestHardware(ctx: IngestContext): Promise<Response> {
 	} catch {
 		return new Response('bad json', { status: 400 });
 	}
-	const entries: HardwareEntry[] = (Array.isArray(body) ? body : [body]).filter(
-		(e): e is HardwareEntry => !!e && typeof e === 'object',
-	);
+	const entries: HardwareEntry[] = (Array.isArray(body) ? body : [body])
+		.filter((e): e is HardwareEntry => !!e && typeof e === 'object')
+		.flatMap(fpsHistorySamples);
 	const ua = request.headers.get('user-agent') ?? '';
 	const revision = crashRevision(request.headers, {});
 
