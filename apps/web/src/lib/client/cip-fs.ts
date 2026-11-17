@@ -25,24 +25,14 @@ const CIP_APPDATA = `${CIP_HOME}/.local/share/${BRAND.org}/${BRAND.name}`;
 
 /** The launcher's own package (installed by the portal, see cip-package.ts). */
 export const PACKAGE_LAUNCHER = 'LAUNCHER';
-/**
- * Tip `directoryname` of the client package. CipSoft: `Tibia.app`; packs
- * override it with `client.packageDir`.
- */
-export const PACKAGE_CLIENT = BRAND.packageDir;
-
 export function packageFsRoot(name: string): string {
 	return `${CIP_APPDATA}/packages/${name}`;
 }
 
 /**
- * Where each package keeps its engine (`tibia.js` / `launcher.js`): the client
- * package has the macOS bundle layout (engine in Contents/MacOS, as CipSoft's
- * Contents/MacOS/client), the launcher's is flat. The engine runs with argv[0]
- * there, so its applicationDirPath() is that directory, as on desktop.
+ * Where CipSoft's AppData ends: a program the launcher starts must live under
+ * `<AppData>/packages/` (the launcher installs every package there).
  */
-export function packageEngineDir(name: string): string {
-	return name === PACKAGE_LAUNCHER
-		? packageFsRoot(name)
-		: `${packageFsRoot(name)}/Contents/MacOS`;
+export function isInstalledProgram(path: string): boolean {
+	return path.startsWith(`${CIP_APPDATA}/packages/`) && !path.includes('/../');
 }

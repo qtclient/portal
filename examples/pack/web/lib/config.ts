@@ -9,7 +9,6 @@ export default defineConfig({
 	client: {
 		name: 'Example',
 		org: 'Example',
-		packageDir: 'Example.app',
 		packId: 'example',
 	},
 });

@@ -9,9 +9,8 @@ import {
 	CIP_HOME,
 	CLIENT_NAME,
 	CLIENT_PACK_ID,
-	PACKAGE_CLIENT,
 	PACKAGE_LAUNCHER,
-	packageEngineDir,
+	isInstalledProgram,
 	packageFsRoot,
 } from './cip-fs.js';
 import {
@@ -32,7 +31,6 @@ import { diag, diagWarn } from './play-diag';
 import { attachViewMagnify } from './view-magnify';
 
 /** The client package the launcher installs (tip `directoryname`). */
-const PACKAGE_ROOT = packageFsRoot(PACKAGE_CLIENT);
 
 /**
  * sessionStorage: qtclient Play → game remount (Emscripten cannot re-init in-page).
@@ -62,6 +60,11 @@ export type TibiaBootOptions = {
 	 * boot game UI only (`QTCLIENT_WASM_SKIP_LAUNCHER=1`). Only for `engine: 'tibia'`.
 	 */
 	skipLauncher?: boolean;
+	/**
+	 * The client program the launcher started (`engine: 'tibia'`): argv[0], and
+	 * its directory holds tibia.wasm / tibia.data / qtloader.js.
+	 */
+	clientProgram?: string;
 	onStatus?: (text: string, progress: number) => void;
 	/** WASM Module onLoaded — may fire before tip page-in / callMain. */
 	onReady?: () => void;
@@ -343,13 +346,17 @@ export function acquirePlayLock(): Promise<boolean> {
 	});
 }
 
-export function takePlayHandoff(): boolean {
+/**
+ * The program the launcher started (its `startDetached` on the web stores the
+ * path, from the client package's `executable`), or null to boot the launcher.
+ */
+export function takePlayHandoff(): string | null {
 	try {
-		const flagged = sessionStorage.getItem(PLAY_HANDOFF_KEY) === '1';
+		const program = sessionStorage.getItem(PLAY_HANDOFF_KEY);
 		sessionStorage.removeItem(PLAY_HANDOFF_KEY);
-		return flagged;
+		return program && isInstalledProgram(program) ? program : null;
 	} catch {
-		return false;
+		return null;
 	}
 }
 
@@ -576,6 +583,10 @@ function loginEnvironment(opts: TibiaBootOptions): Record<string, string> {
 		const q = new URLSearchParams(location.search);
 		const r = q.get('qtclient_renderer');
 		if (r) env.QTCLIENT_RENDERER = r;
+		// Diagnostics: Qt logging rules, e.g. ?qtclient_log=tibia.download.debug=true
+		// (the launcher's per-file download lines; off by default).
+		const log = q.get('qtclient_log');
+		if (log) env.QT_LOGGING_RULES = log.replaceAll(',', ';');
 	} catch {
 		/* ignore */
 	}
@@ -600,15 +611,15 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 	const launcherEngine = callbacks.engine === 'launcher';
 	const jsName = launcherEngine ? 'launcher.js' : 'tibia.js';
 	const wasmName = launcherEngine ? 'launcher.wasm' : 'tibia.wasm';
-	// Both engines run from their installed package: the launcher's (the
-	// portal installs it, bootstrapLauncherPackage) and the client's (the
-	// launcher installs it, like CipSoft's launcher starting the client).
-	const enginePackage = launcherEngine ? PACKAGE_LAUNCHER : PACKAGE_CLIENT;
-	const engineFile = (name: string) => readEngineFile(enginePackage, name);
-	// argv[0] inside the installed package: the engine's applicationDirPath()
-	// is its package directory, so mods/<id> and ../Resources resolve there as
-	// they do next to the desktop binary.
-	const thisProgram = `${packageEngineDir(enginePackage)}/${jsName}`;
+	// Both engines run from their installed package, argv[0] inside it: the
+	// launcher's (the portal installs it, bootstrapLauncherPackage) and the
+	// client's, at the path the launcher started (its package's `executable`).
+	// applicationDirPath() is then the program's directory, as on desktop.
+	const thisProgram = launcherEngine
+		? `${packageFsRoot(PACKAGE_LAUNCHER)}/${jsName}`
+		: callbacks.clientProgram;
+	if (!thisProgram) throw new Error('No client program to start — open the launcher.');
+	const engineFile = (name: string) => readEngineFile(thisProgram, name);
 	const scriptAttr = launcherEngine ? 'launcher' : 'tibia';
 
 	diag('bootTibia', {
@@ -901,7 +912,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 				// package, like desktop); the game trusts its install.
 				diag('tip ready → callMain', {
 					home: CIP_HOME,
-					packageRoot: PACKAGE_ROOT,
+					program: thisProgram,
 					skipLauncher,
 				});
 				callbacks.onStatus?.(

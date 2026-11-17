@@ -9,7 +9,7 @@
  * package.json.version written last. Every other package (the client, CipSoft
  * assets) is the launcher's install.
  */
-import { packageEngineDir, packageFsRoot } from './cip-fs.js';
+import { packageFsRoot } from './cip-fs.js';
 import { unpackLzmaAlone } from './lzma-alone.js';
 import { readFile, writeFile } from './opfs.js';
 
@@ -111,12 +111,12 @@ export async function ensurePackage(opts: {
 	return { version: doc.version, fromCache: false };
 }
 
-/** One installed engine file (the binaries the portal boots). */
+/** An installed engine file, in the directory of the program being started. */
 export async function readEngineFile(
-	packageName: string,
+	program: string,
 	name: string,
 ): Promise<ArrayBuffer> {
-	const path = `${packageEngineDir(packageName)}/${name}`;
+	const path = `${program.slice(0, program.lastIndexOf('/'))}/${name}`;
 	const bytes = await readFile(path);
 	if (!bytes)
 		throw new Error(`Missing ${path} — install via the launcher first.`);

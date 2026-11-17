@@ -22,8 +22,6 @@ export type ClientBrand = {
 	name: string;
 	/** Qt organization name (launcher `productOrg`). */
 	org: string;
-	/** Tip `directoryname` / `packages/<dir>` (launcher `clientPackageDir`). */
-	packageDir: string;
 	/** Pack id staged under tip `mods/<id>/` for /play, or null for a stock tip. */
 	packId: string | null;
 };
@@ -77,7 +75,6 @@ export const DEFAULT_SITE: SiteBrand = {
 export const DEFAULT_CLIENT: ClientBrand = {
 	name: 'Tibia',
 	org: 'Tibia',
-	packageDir: 'Tibia.app',
 	packId: null,
 };
 
