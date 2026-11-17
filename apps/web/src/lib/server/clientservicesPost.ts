@@ -29,7 +29,12 @@ import { checkTotp } from '#lib/server/totp.js';
 import { comparePassword } from '#lib/server/utils.js';
 
 export type ClientServicesStatusType =
-	'cacheinfo' | 'boostedcreature' | 'eventschedule' | 'news' | 'showoff';
+	| 'cacheinfo'
+	| 'boostedcreature'
+	| 'eventschedule'
+	| 'news'
+	| 'newsviewed'
+	| 'showoff';
 
 export interface LoginParams {
 	type: 'login';
@@ -41,7 +46,7 @@ export interface LoginParams {
 	stayloggedin?: boolean;
 }
 
-type StatusParams = { type: ClientServicesStatusType };
+type StatusParams = { type: ClientServicesStatusType; viewedid?: number };
 
 type MultiplexParams = StatusParams | LoginParams;
 
@@ -57,6 +62,7 @@ const STATUS_TYPES = new Set<string>([
 	'boostedcreature',
 	'eventschedule',
 	'news',
+	'newsviewed',
 	'showoff',
 ]);
 
@@ -124,6 +130,10 @@ async function dispatchStatus(
 	switch (params.type) {
 		case 'news':
 			return Response.json(await buildNews());
+		case 'newsviewed':
+			// CIP TNewsViewsUploader reports `{type:"newsviewed", viewedid}` when a
+			// news entry is opened and ignores the answer beyond errorCode.
+			return Response.json({});
 		case 'showoff':
 			return Response.json(
 				(await packHooks.showoff?.({ request })) ?? buildShowOff(),
