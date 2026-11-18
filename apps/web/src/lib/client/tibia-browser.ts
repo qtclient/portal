@@ -230,6 +230,8 @@ type QtclientFsWorkerStats = {
 	openHandles: number;
 	idleHandles: number;
 	nodes: number;
+	/** Async ops by "OP path", most called first (newer engines only). */
+	hotPaths?: { key: string; calls: number }[];
 };
 
 type QtLoadConfig = {
@@ -701,7 +703,10 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 				`heap inUse=${h.inUse}MB maxFootprint=${h.maxFootprint}MB sbrkTop=${h.sbrkTop}MB ` +
 				`reserved=${h.reserved}MB | fs calls=${w.stats.calls} ms=${Math.round(w.stats.ms)} ` +
 				`read=${mb(w.stats.bytesRead)}MB written=${mb(w.stats.bytesWritten)}MB ` +
-				`handles=${w.openHandles} | top ${top.join(' ')}${mainLine}`;
+				`handles=${w.openHandles} | top ${top.join(' ')}${mainLine}` +
+				(w.hotPaths?.length
+					? ` | hot ${w.hotPaths.map((p) => `${p.key}×${p.calls}`).join(', ')}`
+					: '');
 			diag(`${label}: ${line}`, {
 				...snap,
 				fs: {
