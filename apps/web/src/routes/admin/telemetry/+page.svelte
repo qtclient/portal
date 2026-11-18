@@ -64,6 +64,44 @@
 		{/if}
 	</section>
 
+	<section class="flex flex-col gap-2">
+		<h3 class="h3">/play blocked by browser</h3>
+		<p class="text-sm opacity-70">
+			Boots refused before the engine loaded (no WebAssembly JSPI). Decides
+			whether a non-JSPI fallback build is worth it.
+		</p>
+		{#if data.gate.length === 0}
+			<p class="opacity-70">No blocked boots in this window.</p>
+		{:else}
+			<div class="table-wrap">
+				<table class="table table-hover table-auto">
+					<thead>
+						<tr class="[&>th]:!p-2">
+							<th>Browser</th>
+							<th>Version</th>
+							<th>OS</th>
+							<th>Engine</th>
+							<th>Reason</th>
+							<th class="text-right">Boots</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each data.gate as row (row.browser + row.version + row.os + row.engine + row.reason)}
+							<tr class="[&>td]:!p-2">
+								<td>{row.browser}</td>
+								<td class="tabular-nums">{row.version}</td>
+								<td>{row.os}</td>
+								<td>{row.engine}</td>
+								<td><code>{row.reason}</code></td>
+								<td class="text-right tabular-nums">{row.n}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
+
 	<div class="grid md:grid-cols-2 gap-6">
 		<section class="flex flex-col gap-2">
 			<h3 class="h3">GPUs (system surveys)</h3>

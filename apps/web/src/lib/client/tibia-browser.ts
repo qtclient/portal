@@ -18,6 +18,11 @@ import {
 	type PackageProgress,
 	readEngineFile,
 } from './cip-package.js';
+import {
+	detectBrowser,
+	reportBrowserGate,
+	unsupportedBrowserMessage,
+} from './browser-floor';
 import { reportBrowserCrash } from './crash-report';
 import { closeOpfsWriter } from './opfs.js';
 import { createListenerBag } from './otc/dom-util';
@@ -474,7 +479,8 @@ declare global {
  * Qt /play engines are built with `-sJSPI`. Emscripten's
  * `instrumentWasmImports` does `new WebAssembly.Suspending(...)` — Safari
  * added that in 27; iOS Safari ≤26.x throws and kills the tab. Feature-detect
- * before compiling the module so /play can show a clear message instead.
+ * before compiling the module so /play can show a clear message instead
+ * (floor + advice: `browser-floor.ts`).
  */
 export function wasmJspiSupported(): boolean {
 	try {
@@ -489,10 +495,8 @@ export function wasmJspiSupported(): boolean {
 }
 
 export function jspiUnsupportedMessage(): string {
-	return (
-		'This browser cannot run the WebAssembly game client (missing ' +
-		'WebAssembly.Suspending / JSPI). Use Safari 27+, Chrome 137+, or the ' +
-		'desktop installer from /download.'
+	return unsupportedBrowserMessage(
+		detectBrowser(navigator.userAgent, navigator.maxTouchPoints ?? 0),
 	);
 }
 
@@ -871,12 +875,17 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 	void (async () => {
 		try {
 			if (!wasmJspiSupported()) {
-				const msg = jspiUnsupportedMessage();
-				diagWarn('JSPI unsupported', {
-					ua: navigator.userAgent,
-					hasSuspending:
-						typeof (WebAssembly as { Suspending?: unknown }).Suspending ===
-						'function',
+				const info = detectBrowser(
+					navigator.userAgent,
+					navigator.maxTouchPoints ?? 0,
+				);
+				const msg = unsupportedBrowserMessage(info);
+				diagWarn('JSPI unsupported', { ua: navigator.userAgent, ...info });
+				reportBrowserGate({
+					info,
+					engine: launcherEngine ? 'launcher' : 'tibia',
+					reason: 'no-jspi',
+					revision: callbacks.revision,
 				});
 				callbacks.onFatal?.(msg);
 				return;

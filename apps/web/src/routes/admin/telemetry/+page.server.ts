@@ -14,6 +14,19 @@ type FpsRow = {
 
 type CountRow = { label: string | null; n: bigint | number };
 
+type GateRow = {
+	browser: string | null;
+	version: string | null;
+	os: string | null;
+	engine: string | null;
+	reason: string | null;
+	n: bigint | number;
+};
+
+// /play gate records are surveys with `raw.dataType = "BrowserGate"`
+// (lib/client/browser-floor.ts); keep them out of the GPU list.
+const GATE = 'BrowserGate';
+
 export const load = (async ({ url }) => {
 	const days = Math.min(
 		90,
@@ -33,12 +46,28 @@ export const load = (async ({ url }) => {
 	const gpus = await prisma.$queryRaw<CountRow[]>`
 		SELECT gpu AS label, COUNT(*) AS n FROM qtcaac_system_surveys
 		WHERE created_at >= ${since}
+			AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw, '$.dataType')), '') <> ${GATE}
 		GROUP BY gpu ORDER BY n DESC LIMIT 25`;
 
 	const platforms = await prisma.$queryRaw<CountRow[]>`
 		SELECT platform AS label, COUNT(*) AS n FROM qtcaac_crash_reports
 		WHERE created_at >= ${since}
 		GROUP BY platform ORDER BY n DESC`;
+
+	const gate = await prisma.$queryRaw<GateRow[]>`
+		SELECT
+			JSON_UNQUOTE(JSON_EXTRACT(raw, '$.browser')) AS browser,
+			JSON_UNQUOTE(JSON_EXTRACT(raw, '$.browserVersion')) AS version,
+			JSON_UNQUOTE(JSON_EXTRACT(raw, '$.os')) AS os,
+			JSON_UNQUOTE(JSON_EXTRACT(raw, '$.engine')) AS engine,
+			JSON_UNQUOTE(JSON_EXTRACT(raw, '$.reason')) AS reason,
+			COUNT(*) AS n
+		FROM qtcaac_system_surveys
+		WHERE created_at >= ${since}
+			AND JSON_UNQUOTE(JSON_EXTRACT(raw, '$.dataType')) = ${GATE}
+		GROUP BY browser, version, os, engine, reason
+		ORDER BY n DESC
+		LIMIT 100`;
 
 	return {
 		title: 'Telemetry',
@@ -51,6 +80,14 @@ export const load = (async ({ url }) => {
 			max_fps: Number(r.max_fps),
 		})),
 		gpus: gpus.map((r) => ({ label: r.label ?? 'unknown', n: Number(r.n) })),
+		gate: gate.map((r) => ({
+			browser: r.browser ?? 'unknown',
+			version: r.version && r.version !== 'null' ? r.version : '?',
+			os: r.os ?? 'unknown',
+			engine: r.engine ?? 'unknown',
+			reason: r.reason ?? 'unknown',
+			n: Number(r.n),
+		})),
 		crashPlatforms: platforms.map((r) => ({
 			label: r.label ?? 'unknown',
 			n: Number(r.n),
