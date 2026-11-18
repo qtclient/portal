@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
-import { cipTimestamp, crashRevision, normPlatform, parseBrowserStack, parseSymbolMap, pickCrashParts } from './parse.js';
+import {
+	cipRendererName,
+	cipTimestamp,
+	crashRevision,
+	fpsHistorySamples,
+	normPlatform,
+	parseBrowserStack,
+	parseSymbolMap,
+	pickCrashParts,
+} from './parse.js';
 import { signatureOf, titleOf } from './signature.js';
 
 describe('signatureOf', () => {
@@ -18,7 +27,9 @@ describe('signatureOf', () => {
 	});
 
 	test('crash type is part of the signature', () => {
-		expect(signatureOf(frames, 'SIGSEGV')).not.toBe(signatureOf(frames, 'SIGABRT'));
+		expect(signatureOf(frames, 'SIGSEGV')).not.toBe(
+			signatureOf(frames, 'SIGABRT'),
+		);
 	});
 
 	test('title names the first symbolicated frame', () => {
@@ -35,8 +46,16 @@ describe('parseBrowserStack', () => {
 				'    at callMain (https://cdn.example/client/abc/wasm/tibia.js:10:5)',
 			].join('\n'),
 		);
-		expect(frames[0]).toMatchObject({ module: 'tibia.wasm', function: 'foo', offset: '0x4a5b' });
-		expect(frames[1]).toMatchObject({ module: 'tibia.js', function: 'callMain', line: 10 });
+		expect(frames[0]).toMatchObject({
+			module: 'tibia.wasm',
+			function: 'foo',
+			offset: '0x4a5b',
+		});
+		expect(frames[1]).toMatchObject({
+			module: 'tibia.js',
+			function: 'callMain',
+			line: 10,
+		});
 	});
 
 	test('safari wasm frames keep the function index', () => {
@@ -52,8 +71,14 @@ describe('parseBrowserStack', () => {
 	});
 
 	test('firefox frames', () => {
-		const frames = parseBrowserStack('boot@https://site.example/play/app.js:3:7');
-		expect(frames[0]).toMatchObject({ module: 'app.js', function: 'boot', line: 3 });
+		const frames = parseBrowserStack(
+			'boot@https://site.example/play/app.js:3:7',
+		);
+		expect(frames[0]).toMatchObject({
+			module: 'app.js',
+			function: 'boot',
+			line: 3,
+		});
 	});
 });
 
@@ -88,7 +113,11 @@ describe('pickCrashParts', () => {
 		]);
 		expect(parts.dump?.name).toBe('abc.dmp');
 		expect(parts.sessiondump?.name).toBe('abc.dmp.session');
-		expect(parts.fields).toEqual({ Comment: 'it broke', ReportType: 'Full', Version: '15.33.c68982ec' });
+		expect(parts.fields).toEqual({
+			Comment: 'it broke',
+			ReportType: 'Full',
+			Version: '15.33.c68982ec',
+		});
 	});
 
 	test('Breakpad/Crashpad name still wins; a larger session dump is never the dump', () => {
@@ -117,13 +146,65 @@ describe('pickCrashParts', () => {
 
 describe('crashRevision', () => {
 	test('headers, then lowercase fields, then CIP Version', () => {
-		expect(crashRevision(new Headers({ 'x-tibia-client': 'r1' }), { Version: 'v' })).toBe('r1');
-		expect(crashRevision(new Headers(), { Version: '15.33.c68982ec' })).toBe('15.33.c68982ec');
-		expect(crashRevision(new Headers(), { revision: 'r2', Version: 'v' })).toBe('r2');
+		expect(
+			crashRevision(new Headers({ 'x-tibia-client': 'r1' }), { Version: 'v' }),
+		).toBe('r1');
+		expect(crashRevision(new Headers(), { Version: '15.33.c68982ec' })).toBe(
+			'15.33.c68982ec',
+		);
+		expect(crashRevision(new Headers(), { revision: 'r2', Version: 'v' })).toBe(
+			'r2',
+		);
 		expect(crashRevision(new Headers(), {})).toBe('unknown');
 	});
 });
 
+describe('fpsHistorySamples', () => {
+	test('flattens the CIP FPS document and names the renderer', () => {
+		const doc = {
+			dataType: 1,
+			clientID: 'abc',
+			renderer: 9,
+			FPSHistory: [
+				{
+					maxFPS: 61,
+					minFPS: 30,
+					averageFPS: 58,
+					timeStamp: '2026-11-16 12:00:00,000',
+				},
+				{
+					maxFPS: 60,
+					minFPS: 59,
+					averageFPS: 60,
+					timeStamp: '2026-11-16 12:01:00,000',
+				},
+				null,
+			],
+		};
+		const out = fpsHistorySamples(doc);
+		expect(out).toHaveLength(2);
+		expect(out[0]).toMatchObject({
+			dataType: 'FPSHistory',
+			clientID: 'abc',
+			renderer: 'metal',
+			averageFPS: 58,
+		});
+		expect(out[1].timeStamp).toBe('2026-11-16 12:01:00,000');
+	});
+
+	test('other entries pass through', () => {
+		const survey = { dataType: 'SystemSurvey', gpu: 'x' };
+		expect(fpsHistorySamples(survey)).toEqual([survey]);
+		expect(fpsHistorySamples({ dataType: 1 })).toEqual([{ dataType: 1 }]);
+	});
+
+	test('renderer ids', () => {
+		expect(cipRendererName(8)).toBe('opengl');
+		expect(cipRendererName(3)).toBe('software');
+		expect(cipRendererName(42)).toBe('42');
+		expect(cipRendererName(undefined)).toBeUndefined();
+	});
+});
 
 describe('parseSymbolMap', () => {
 	test('decodes emscripten escapes', () => {
