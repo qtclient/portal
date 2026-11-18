@@ -462,7 +462,38 @@ declare global {
 		qtLoad?: (config: QtLoadConfig) => Promise<unknown>;
 		tibia_entry?: (config: unknown) => Promise<TibiaModule>;
 		launcher_entry?: (config: unknown) => Promise<TibiaModule>;
+		__qtclientDiag?: {
+			mark?: (msg: string, data?: Record<string, unknown>) => void;
+			dump?: () => unknown;
+			flush?: () => void;
+		};
 	}
+}
+
+/**
+ * Qt /play engines are built with `-sJSPI`. Emscripten's
+ * `instrumentWasmImports` does `new WebAssembly.Suspending(...)` — Safari
+ * added that in 27; iOS Safari ≤26.x throws and kills the tab. Feature-detect
+ * before compiling the module so /play can show a clear message instead.
+ */
+export function wasmJspiSupported(): boolean {
+	try {
+		const WA = WebAssembly as typeof WebAssembly & {
+			Suspending?: new (...args: unknown[]) => unknown;
+			Function?: unknown;
+		};
+		return typeof WA.Suspending === 'function' || typeof WA.Function === 'function';
+	} catch {
+		return false;
+	}
+}
+
+export function jspiUnsupportedMessage(): string {
+	return (
+		'This browser cannot run the WebAssembly game client (missing ' +
+		'WebAssembly.Suspending / JSPI). Use Safari 27+, Chrome 137+, or the ' +
+		'desktop installer from /download.'
+	);
 }
 
 function wasmUrl(base: string, path: string, stamp?: string): string {
@@ -839,6 +870,17 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 
 	void (async () => {
 		try {
+			if (!wasmJspiSupported()) {
+				const msg = jspiUnsupportedMessage();
+				diagWarn('JSPI unsupported', {
+					ua: navigator.userAgent,
+					hasSuspending:
+						typeof (WebAssembly as { Suspending?: unknown }).Suspending ===
+						'function',
+				});
+				callbacks.onFatal?.(msg);
+				return;
+			}
 			callbacks.onStatus?.(
 				launcherEngine ? 'Loading qtclient…' : 'Loading client from package…',
 				30,
