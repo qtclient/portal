@@ -127,4 +127,15 @@ export type TelemetryEvent =
 			averageFps: number;
 			minFps: number;
 			maxFps: number;
+	  }
+	| {
+			/** /play refused to boot (e.g. no WebAssembly JSPI). */
+			kind: 'gate';
+			platform: string;
+			revision: string;
+			reason: string;
+			engine: string;
+			browser: string;
+			browserVersion: number | null;
+			os: string;
 	  };

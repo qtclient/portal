@@ -19,6 +19,8 @@
  *   flattened into one entry per sample. `dataType: "FPSHistory"` entries carry
  *   `clientID`, `renderer`, `timeStamp` (`yyyy-MM-dd hh:mm:ss,zzz`),
  *   `averageFPS`, `minFPS`, `maxFPS`; anything else is kept as a system survey.
+ *   /play's unsupported-browser gate posts `dataType: "BrowserGate"` surveys
+ *   (`reason`, `engine`, `browser`, `browserVersion`, `os`; no client id).
  */
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -249,6 +251,23 @@ export async function ingestHardware(ctx: IngestContext): Promise<Response> {
 				raw: e as Prisma.InputJsonValue,
 			},
 		});
+		if (e.dataType === 'BrowserGate') {
+			try {
+				await hooks.telemetry?.({
+					kind: 'gate',
+					platform,
+					revision: rev,
+					reason: str(e.reason, 64) ?? 'unknown',
+					engine: str(e.engine, 32) ?? 'unknown',
+					browser: str(e.browser, 32) ?? 'unknown',
+					browserVersion:
+						typeof e.browserVersion === 'number' ? e.browserVersion : null,
+					os: str(e.os, 32) ?? 'unknown',
+				});
+			} catch (err) {
+				console.warn('[telemetry] pack sink failed', err);
+			}
+		}
 	}
 	if (fps.length) {
 		await prisma.fpsSample.createMany({ data: fps });

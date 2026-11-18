@@ -4,7 +4,7 @@
 |----------|--------|---------|
 | `POST /clientservices/crashreceiver.php` | desktop client (`crashReportUrl`) | `multipart/form-data` as CipSoft's client sends it: Breakpad minidump part `minidump` (`<id>.dmp`), optional session recording part `sessiondump` (`<id>.dmp.session`), and one text field per annotation: `ProductName`, `Version`, `Timestamp`, `OperatingSystem`, `HardwareID`, `EngineID`, `LoginHost`, `LogMessages`, `Character`, `Comment`, `ReportType` (`Full` \| `Minimal`; a minimal report omits `LogMessages` and sends `Character` as `xxx`). Other senders: the minidump may be `upload_file_minidump` (Breakpad/Crashpad) or else the largest file part; optional `platform`, `revision`/`ver`. Raw `application/octet-stream` also accepted (fields in the query string). |
 | `POST /api/telemetry/crash` | `/play` | JSON `{ name, message, stack, stage, revision, userAgent }` |
-| `POST /clientservices/hardwarereceiver.php` | client (`fpsHistoryRecipient`) | JSON object or array. `dataType: "FPSHistory"` entries: `clientID`, `renderer`, `timeStamp` (`yyyy-MM-dd hh:mm:ss,zzz`), `averageFPS`, `minFPS`, `maxFPS`. Other objects are stored as system surveys. |
+| `POST /clientservices/hardwarereceiver.php` | client (`fpsHistoryRecipient`) | JSON object or array. `dataType: "FPSHistory"` entries: `clientID`, `renderer`, `timeStamp` (`yyyy-MM-dd hh:mm:ss,zzz`), `averageFPS`, `minFPS`, `maxFPS`. Other objects are stored as system surveys. `/play` also posts `dataType: "BrowserGate"` surveys when it refuses to boot (below). |
 | `POST /api/telemetry/symbols` | CI | `Authorization: Bearer $QTCAAC_SYMBOL_UPLOAD_TOKEN`, multipart `file`: Breakpad `.sym`, or a WASM source map (`*.wasm.map`) plus a `revision` field |
 
 The client revision comes from `X-Tibia-Client` / `X-Qtclient-Revision` or the
@@ -33,8 +33,22 @@ clients send no `Origin`); symbol upload is token-protected.
    get readable stacks once CI catches up.
 
 Admin views: `/admin/crashes` (groups, stacks, resolve/notes, re-symbolicate)
-and `/admin/telemetry` (FPS per revision/renderer, GPUs, crashes per platform).
-A pack `telemetry` hook can forward events to another system.
+and `/admin/telemetry` (FPS per revision/renderer, `/play` blocked boots, GPUs,
+crashes per platform). A pack `telemetry` hook can forward events to another
+system (`crash`, `fps`, `gate`).
+
+## /play browser gate
+
+The WASM engines are built with Emscripten `-sJSPI`, so `/play` feature-detects
+`WebAssembly.Suspending` before loading them. The floor is Chrome/Edge 137,
+Firefox 153 and Safari 27 (iOS/iPadOS 27 for every iOS browser); it is written
+once, in `apps/web/src/lib/client/browser-floor.ts` (`JSPI_FLOOR`), which also
+picks the advice shown to the player. A refused boot posts one survey to
+`/clientservices/hardwarereceiver.php`:
+`{ dataType: "BrowserGate", platform: "wasm", revision, reason: "no-jspi", engine, browser, browserVersion, os }`
+(no client id, no credentials). `/admin/telemetry` groups them by browser,
+version and OS — the signal for whether a non-JSPI (Asyncify) fallback build is
+worth shipping.
 
 ## Settings
 
