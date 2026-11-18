@@ -5,7 +5,6 @@
 
 	import { diag, installPlayDiag } from '#lib/client/play-diag.js';
 	import {
-		acquirePlayLock,
 		applyProductPlayCss,
 		bootstrapLauncherPackage,
 		bootTibia,
@@ -39,10 +38,6 @@
 	 * (tibia.wasm, SKIP_LAUNCHER). Never Widgets + QML in one Module.
 	 */
 	async function bootPlay(cdn: string) {
-		if (!(await acquirePlayLock()))
-			throw new Error(
-				'The game is already open in another tab or window. Close it, then reload this page.',
-			);
 		const clientProgram = takePlayHandoff();
 		const skipLauncher = clientProgram !== null;
 		const launcherBoot = !skipLauncher;

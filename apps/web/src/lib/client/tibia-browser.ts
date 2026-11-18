@@ -335,23 +335,6 @@ export function sameOriginEngineDir(
 }
 
 /**
- * One /play per browser profile, like desktop's single client install: OPFS
- * access handles are exclusive, so a second tab could not open the install and
- * would take it for missing. Held until the page goes away; a Play remount
- * reload waits briefly for the previous document to release it.
- */
-export function acquirePlayLock(): Promise<boolean> {
-	return new Promise((resolve) => {
-		navigator.locks
-			.request('qtclient-play', { signal: AbortSignal.timeout(4000) }, () => {
-				resolve(true);
-				return new Promise<never>(() => undefined);
-			})
-			.catch(() => resolve(false));
-	});
-}
-
-/**
  * The program the launcher started (its `startDetached` on the web stores the
  * path, from the client package's `executable`), or null to boot the launcher.
  */
