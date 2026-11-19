@@ -4,6 +4,7 @@
 	import * as publicEnv from '$app/env/public';
 
 	import { diag, installPlayDiag } from '#lib/client/play-diag.js';
+	import { installVisualViewportFit } from '#lib/client/play-viewport.js';
 	import {
 		applyProductPlayCss,
 		bootstrapLauncherPackage,
@@ -30,6 +31,7 @@
 	let { data }: Props = $props();
 
 	let runtimeError = $state('');
+	let playRoot: HTMLDivElement | undefined = $state();
 
 	/**
 	 * /play boot: the desktop two-binary model. Every visit starts the launcher
@@ -133,6 +135,7 @@
 	onMount(() => {
 		const removeDiag = installPlayDiag();
 		const removeKeyGuard = installGameKeyGuard();
+		const removeViewportFit = playRoot ? installVisualViewportFit(playRoot) : () => {};
 		document.documentElement.classList.add('play-mode');
 		document.documentElement.style.overflow = 'hidden';
 		document.body.style.overflow = 'hidden';
@@ -149,6 +152,7 @@
 
 		return () => {
 			removeKeyGuard();
+			removeViewportFit();
 			removeDiag();
 			document.documentElement.classList.remove('play-mode');
 			document.documentElement.style.overflow = '';
@@ -164,7 +168,7 @@
 	<title>{browserTitle(data.title)}</title>
 	<meta
 		name="viewport"
-		content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
+		content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
 	<link rel="manifest" href="/play/manifest.webmanifest" />
 	<meta name="theme-color" content="#0b0e12" />
 	<meta name="mobile-web-app-capable" content="yes" />
@@ -178,7 +182,7 @@
 	{/if}
 </svelte:head>
 
-<div class="play-root">
+<div class="play-root" bind:this={playRoot}>
 	<div id="play-stage" class="play-stage">
 		<div id="play-transition" class="play-transition" aria-live="polite">
 			<p id="play-transition-status">Loading {pack.client.name}…</p>
@@ -220,10 +224,11 @@
 	}
 	.play-stage {
 		position: absolute;
+		/* Notch, rounded corners and the home indicator (viewport-fit=cover). */
 		top: env(safe-area-inset-top, 0px);
-		left: 0;
-		right: 0;
-		bottom: 0;
+		left: env(safe-area-inset-left, 0px);
+		right: env(safe-area-inset-right, 0px);
+		bottom: env(safe-area-inset-bottom, 0px);
 		overflow: hidden;
 		background: #0b0e12;
 		z-index: 1;
