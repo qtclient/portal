@@ -70,3 +70,9 @@ html.play-mode .main-content {
 	background: linear-gradient(90deg, #c9a227, #e8d48b);
 	transition: width 180ms ease;
 }
+
+/* Qt WASM defaults .qt-decorated-window to lightgray — kill that flash. */
+#tibia-screen .qt-decorated-window,
+#play-stage .qt-decorated-window {
+	background-color: #0b0e12 !important;
+}

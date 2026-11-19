@@ -130,6 +130,12 @@ const coreHandle = (async ({ event, resolve }) => {
 							'href="/styles/site-shell.css"',
 							'href="/styles/play-shell.css"',
 						)
+						// Inline critical bg before CSS/JS: launcher→client
+						// location.reload() must not flash the UA white page.
+						.replace(
+							'<head>',
+							'<head><style>html,body{background:#0b0e12!important;color-scheme:dark}</style>',
+						)
 			: undefined,
 	});
 

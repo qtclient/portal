@@ -44,6 +44,8 @@ import { attachViewMagnify } from './view-magnify';
 export const PLAY_HANDOFF_KEY = 'tibia.play';
 /** Keep the launching overlay across the remount navigation. */
 export const PLAY_TRANSITION_KEY = 'tibia.play.transition';
+/** Last good CipSoft BackgroundImage URL — sync splash across reload. */
+export const PLAY_BG_KEY = 'tibia.play.bg';
 
 export type TibiaBootOptions = {
 	/**
@@ -407,6 +409,66 @@ export function hidePlayTransition(): void {
 }
 
 /**
+ * Hide the splash only after Qt has a window canvas and the browser has
+ * painted a frame — avoids lightgray/empty flash when gameUiReady fires
+ * before the first QML present.
+ */
+export function hidePlayTransitionWhenPainted(opts?: {
+	timeoutMs?: number;
+}): void {
+	const timeoutMs = opts?.timeoutMs ?? 4000;
+	const started = performance.now();
+	const tryHide = () => {
+		const canvas =
+			document.querySelector('#tibia-screen canvas') ??
+			document.querySelector('#play-stage canvas.qt-window-canvas') ??
+			document.querySelector('#play-stage canvas:not(.backbuffer)');
+		if (canvas || performance.now() - started >= timeoutMs) {
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => hidePlayTransition());
+			});
+			return;
+		}
+		requestAnimationFrame(tryHide);
+	};
+	requestAnimationFrame(tryHide);
+}
+
+function applyCachedPlayBackground(): void {
+	let bg = '';
+	try {
+		bg = sessionStorage.getItem(PLAY_BG_KEY) ?? '';
+	} catch {
+		return;
+	}
+	if (!bg) return;
+	applyPlayBackground(bg);
+}
+
+function applyPlayBackground(bg: string): void {
+	const stage = document.getElementById('play-stage');
+	const style = {
+		backgroundColor: '#0b0e12',
+		backgroundImage: `url(${bg})`,
+		backgroundSize: 'cover',
+		backgroundPosition: 'center',
+		backgroundRepeat: 'no-repeat',
+	} as CSSStyleDeclaration;
+	if (stage) Object.assign(stage.style, style);
+	const transition = document.getElementById('play-transition');
+	if (transition) {
+		Object.assign(transition.style, {
+			backgroundColor: 'rgba(11, 14, 18, 0.72)',
+			backgroundImage: `url(${bg})`,
+			backgroundSize: 'cover',
+			backgroundPosition: 'center',
+			backgroundRepeat: 'no-repeat',
+			backgroundBlendMode: 'darken',
+		} as CSSStyleDeclaration);
+	}
+}
+
+/**
  * Install the launcher package (launcher.js / .wasm: CipSoft's launcher, the
  * same classes as desktop) into OPFS packages/LAUNCHER/ for /play.
  */
@@ -445,6 +507,7 @@ export async function loadScriptFromBytes(
 export function resumePlayTransition(): void {
 	const continuing = takePlayTransition();
 	showPlayTransition(continuing ? 'Launching client…' : 'Loading client…');
+	applyCachedPlayBackground();
 }
 
 declare global {
@@ -514,25 +577,12 @@ export function applyProductPlayCss(opts: {
 	].filter(Boolean);
 	if (candidates.length === 0) return;
 	const applyBg = (bg: string) => {
-		const style = {
-			backgroundColor: '#0b0e12',
-			backgroundImage: `url(${bg})`,
-			backgroundSize: 'cover',
-			backgroundPosition: 'center',
-			backgroundRepeat: 'no-repeat',
-		} as CSSStyleDeclaration;
-		Object.assign(stage.style, style);
-		const transition = document.getElementById('play-transition');
-		if (transition) {
-			Object.assign(transition.style, {
-				backgroundColor: 'rgba(11, 14, 18, 0.72)',
-				backgroundImage: `url(${bg})`,
-				backgroundSize: 'cover',
-				backgroundPosition: 'center',
-				backgroundRepeat: 'no-repeat',
-				backgroundBlendMode: 'darken',
-			} as CSSStyleDeclaration);
+		try {
+			sessionStorage.setItem(PLAY_BG_KEY, bg);
+		} catch {
+			/* ignore */
 		}
+		applyPlayBackground(bg);
 		diag('product play css applied', { bg });
 	};
 	// Probe so a missing tip-pack chrome falls through to /images/launcher.

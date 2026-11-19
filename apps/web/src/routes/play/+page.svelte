@@ -10,6 +10,7 @@
 		bootstrapLauncherPackage,
 		bootTibia,
 		hidePlayTransition,
+		hidePlayTransitionWhenPainted,
 		installGameKeyGuard,
 		PLAY_TRANSITION_KEY,
 		resumePlayTransition,
@@ -118,7 +119,9 @@
 			},
 			onLauncherReady() {
 				diag('bootTibia onLauncherReady', { launcherBoot });
-				if (launcherBoot) hidePlayTransition();
+				// Wait for the first Qt canvas paint — hiding at callMain flashes
+				// empty/lightgray chrome before Widgets appear.
+				if (launcherBoot) hidePlayTransitionWhenPainted();
 			},
 			onFatal(message) {
 				diag('bootTibia onFatal', { message, skipLauncher, launcherBoot });
@@ -127,7 +130,7 @@
 			},
 			onGameReady() {
 				diag('bootTibia onGameReady', { skipLauncher });
-				hidePlayTransition();
+				hidePlayTransitionWhenPainted();
 			},
 		});
 	}
@@ -322,5 +325,10 @@
 		width: 8%;
 		background: linear-gradient(90deg, #c9a227, #e8d48b);
 		transition: width 180ms ease;
+	}
+	/* Qt WASM defaults .qt-decorated-window to lightgray. */
+	:global(#tibia-screen .qt-decorated-window),
+	:global(#play-stage .qt-decorated-window) {
+		background-color: #0b0e12 !important;
 	}
 </style>
