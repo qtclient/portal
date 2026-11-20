@@ -27,7 +27,7 @@ html.play-mode .main-content {
 }
 
 /* Shared by SSR splash (+page.svelte) and showPlayTransition() JS path.
-   BackgroundImage is applied from applyProductPlayCss when tip URLs are known. */
+   Tip splash: {assetBase}/images/launcher/BackgroundImage.jpg (same as qtclient login). */
 .play-transition {
 	position: absolute;
 	inset: 0;

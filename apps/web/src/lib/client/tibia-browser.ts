@@ -346,7 +346,12 @@ export function takePlayHandoff(): string | null {
 	try {
 		const program = sessionStorage.getItem(PLAY_HANDOFF_KEY);
 		sessionStorage.removeItem(PLAY_HANDOFF_KEY);
-		return program && isInstalledProgram(program) ? program : null;
+		if (!program) return null;
+		if (isInstalledProgram(program)) return program;
+		// Visible in the console when brand AppData ≠ launcher install root
+		// (was: IdleOT/IdleOT expected, CipSoft/Tibia handed off → reload loop).
+		diagWarn('play handoff rejected', { program });
+		return null;
 	} catch {
 		return null;
 	}
@@ -554,8 +559,9 @@ function wasmUrl(base: string, path: string, stamp?: string): string {
 }
 
 /**
- * CipSoft BackgroundImage on #play-stage (+ transition shell). Call early on
- * /play so warm boots are not a black void while the engine loads.
+ * Shared tip splash on #play-stage (+ transition shell):
+ * `{assetBase}/images/launcher/BackgroundImage.jpg` (same URL as qtclient login).
+ * Pack tip path is a local-F5 override when the CDN tip is not refreshed yet.
  */
 export function applyProductPlayCss(opts: {
 	assetBase: string;
@@ -566,6 +572,8 @@ export function applyProductPlayCss(opts: {
 	if (!stage) return;
 	const stamp = opts.engineStamp;
 	const candidates = [
+		// Canonical product rebrand path (stock CIP art when tip unchanged).
+		wasmUrl(opts.assetBase, 'images/launcher/BackgroundImage.jpg', stamp),
 		opts.packWasmBase && CLIENT_PACK_ID
 			? wasmUrl(
 					opts.packWasmBase,
@@ -573,7 +581,6 @@ export function applyProductPlayCss(opts: {
 					stamp,
 				)
 			: '',
-		wasmUrl(opts.assetBase, 'images/launcher/BackgroundImage.jpg', stamp),
 	].filter(Boolean);
 	if (candidates.length === 0) return;
 	const applyBg = (bg: string) => {
@@ -585,7 +592,6 @@ export function applyProductPlayCss(opts: {
 		applyPlayBackground(bg);
 		diag('product play css applied', { bg });
 	};
-	// Probe so a missing tip-pack chrome falls through to /images/launcher.
 	let idx = 0;
 	const tryNext = () => {
 		if (idx >= candidates.length) return;
@@ -653,10 +659,16 @@ function loginEnvironment(opts: TibiaBootOptions): Record<string, string> {
 		const q = new URLSearchParams(location.search);
 		const r = q.get('qtclient_renderer');
 		if (r) env.QTCLIENT_RENDERER = r;
-		// Diagnostics: Qt logging rules, e.g. ?qtclient_log=tibia.download.debug=true
-		// (the launcher's per-file download lines; off by default).
+		// Diagnostics: Qt logging rules, e.g. ?qtclient_log=sound.music.debug=true
+		// (CipSoft's sound categories; off by default).
 		const log = q.get('qtclient_log');
 		if (log) env.QT_LOGGING_RULES = log.replaceAll(',', ';');
+		// Forward ?idleot_*=… into IDLEOT_* env (raycast stability / lighting bisect).
+		// e.g. ?idleot_raycast_stability=1 → IDLEOT_RAYCAST_STABILITY=1
+		for (const [key, value] of q.entries()) {
+			if (!key.startsWith('idleot_')) continue;
+			env[key.toUpperCase()] = value === '' ? '1' : value;
+		}
 	} catch {
 		/* ignore */
 	}
@@ -929,7 +941,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 				return;
 			}
 			callbacks.onStatus?.(
-				launcherEngine ? 'Loading qtclient…' : 'Loading client from package…',
+				launcherEngine ? 'Loading game…' : 'Loading client from package…',
 				30,
 			);
 			diag(`engine files ${jsName}/${wasmName}/qtloader`);
@@ -943,7 +955,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 				loader: loaderBytes.byteLength,
 			});
 			callbacks.onStatus?.(
-				launcherEngine ? 'Loading qtclient…' : 'Loading client…',
+				launcherEngine ? 'Loading game…' : 'Loading client…',
 				45,
 			);
 			const tipEngineJs = wasmUrl(
@@ -963,7 +975,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 			const engineScript = await loadScriptFromBytes(engineJs, scriptAttr);
 			diag(`${jsName} script loaded`);
 			callbacks.onStatus?.(
-				launcherEngine ? 'Starting qtclient…' : 'Starting client…',
+				launcherEngine ? 'Starting game…' : 'Starting client…',
 				55,
 			);
 			await loadScriptFromBytes(loaderBytes);
@@ -1008,7 +1020,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 					skipLauncher,
 				});
 				callbacks.onStatus?.(
-					launcherEngine ? 'Launching qtclient…' : 'Launching client…',
+					launcherEngine ? 'Launching game…' : 'Launching client…',
 					95,
 				);
 				if (launcherEngine) callbacks.onLauncherReady?.();

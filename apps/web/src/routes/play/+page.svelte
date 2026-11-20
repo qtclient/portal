@@ -52,7 +52,7 @@
 		diag('bootPlay', { skipLauncher, launcherBoot, cdn });
 		resumePlayTransition();
 		updatePlayTransition(
-			skipLauncher ? 'Launching client…' : 'Loading qtclient…',
+			skipLauncher ? 'Launching client…' : 'Loading game…',
 			8,
 		);
 		const clientBase = tipUrl(cdn, 'launcher/tibiaclient-web-current');
