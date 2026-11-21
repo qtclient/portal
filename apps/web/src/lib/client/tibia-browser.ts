@@ -6,11 +6,16 @@
 import { playEnv } from '$pack/play.client';
 
 import {
+	detectBrowser,
+	reportBrowserGate,
+	unsupportedBrowserMessage,
+} from './browser-floor';
+import {
 	CIP_HOME,
 	CLIENT_NAME,
 	CLIENT_PACK_ID,
-	PACKAGE_LAUNCHER,
 	isInstalledProgram,
+	PACKAGE_LAUNCHER,
 	packageFsRoot,
 } from './cip-fs.js';
 import {
@@ -18,14 +23,9 @@ import {
 	type PackageProgress,
 	readEngineFile,
 } from './cip-package.js';
-import {
-	detectBrowser,
-	reportBrowserGate,
-	unsupportedBrowserMessage,
-} from './browser-floor';
 import { reportBrowserCrash } from './crash-report';
 import { closeOpfsWriter } from './opfs.js';
-import { createListenerBag } from './otc/dom-util';
+import { createListenerBag, sessionCooldown } from './otc/dom-util';
 import {
 	clearOtcRemountCount,
 	OTC_SCRIPT_ATTR,
@@ -33,6 +33,7 @@ import {
 	reloadForOtcRemount,
 } from './otc/wasm-guard';
 import { diag, diagWarn } from './play-diag';
+import { installTouchKeyboardPriming } from './touch-keyboard';
 import { attachViewMagnify } from './view-magnify';
 
 /** The client package the launcher installs (tip `directoryname`). */
@@ -541,7 +542,9 @@ export function wasmJspiSupported(): boolean {
 			Suspending?: new (...args: unknown[]) => unknown;
 			Function?: unknown;
 		};
-		return typeof WA.Suspending === 'function' || typeof WA.Function === 'function';
+		return (
+			typeof WA.Suspending === 'function' || typeof WA.Function === 'function'
+		);
 	} catch {
 		return false;
 	}
@@ -910,6 +913,8 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 	};
 	screen.addEventListener('pointerdown', onGamePointer);
 	bag.defer(() => screen.removeEventListener('pointerdown', onGamePointer));
+	// iOS: open the keyboard even when Qt handles the tap late (queued).
+	bag.defer(installTouchKeyboardPriming(screen));
 
 	callbacks.onStatus?.(`Loading ${CLIENT_NAME}…`, 10);
 	(
@@ -1205,6 +1210,19 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 				stack: err instanceof Error ? err.stack?.slice(0, 3500) : null,
 				...wasmHeapSnap(),
 			});
+			// The engine's fixed WebAssembly.Memory could not be reserved at boot:
+			// Safari frees the previous page's instance (launcher → game swap,
+			// reload) some time after pagehide. One delayed reload per minute.
+			if (
+				err instanceof RangeError &&
+				/out of memory/i.test(raw) &&
+				sessionCooldown('qtc-play-oom-retry', 60_000)
+			) {
+				diagWarn('boot out of memory: reloading once', { launcherEngine });
+				callbacks.onStatus?.('Retrying…', 10);
+				window.setTimeout(() => location.reload(), 1500);
+				return;
+			}
 			callbacks.onFatal?.(crashText(raw));
 		}
 	})();
