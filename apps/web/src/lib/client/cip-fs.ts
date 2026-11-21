@@ -26,7 +26,7 @@ const CIP_APPDATA = `${CIP_HOME}/.local/share/${BRAND.org}/${BRAND.name}`;
 /**
  * Compile-time launcher/client default when tip brand.json is not loaded yet
  * (`TIBIA_PRODUCT_ORG` / `Tibia` in qtclient CMake). The wasm may still install
- * packages here even when the portal pack brand is IdleOT/IdleOT — handoff must
+ * packages here even when the portal pack brands its own org/app — handoff must
  * accept both or /play loops launcher→reload→launcher forever.
  */
 const STOCK_APPDATA = `${CIP_HOME}/.local/share/CipSoft/Tibia`;

@@ -349,7 +349,7 @@ export function takePlayHandoff(): string | null {
 		if (!program) return null;
 		if (isInstalledProgram(program)) return program;
 		// Visible in the console when brand AppData ≠ launcher install root
-		// (was: IdleOT/IdleOT expected, CipSoft/Tibia handed off → reload loop).
+		// (a pack brand expected, CipSoft/Tibia handed off → reload loop).
 		diagWarn('play handoff rejected', { program });
 		return null;
 	} catch {
@@ -663,12 +663,6 @@ function loginEnvironment(opts: TibiaBootOptions): Record<string, string> {
 		// (CipSoft's sound categories; off by default).
 		const log = q.get('qtclient_log');
 		if (log) env.QT_LOGGING_RULES = log.replaceAll(',', ';');
-		// Forward ?idleot_*=… into IDLEOT_* env (raycast stability / lighting bisect).
-		// e.g. ?idleot_raycast_stability=1 → IDLEOT_RAYCAST_STABILITY=1
-		for (const [key, value] of q.entries()) {
-			if (!key.startsWith('idleot_')) continue;
-			env[key.toUpperCase()] = value === '' ? '1' : value;
-		}
 	} catch {
 		/* ignore */
 	}
