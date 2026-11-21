@@ -4,7 +4,6 @@
 	import * as publicEnv from '$app/env/public';
 
 	import { diag, installPlayDiag } from '#lib/client/play-diag.js';
-	import { installVisualViewportFit } from '#lib/client/play-viewport.js';
 	import {
 		applyProductPlayCss,
 		bootstrapLauncherPackage,
@@ -32,7 +31,6 @@
 	let { data }: Props = $props();
 
 	let runtimeError = $state('');
-	let playRoot: HTMLDivElement | undefined = $state();
 
 	/**
 	 * /play boot: the desktop two-binary model. Every visit starts the launcher
@@ -138,7 +136,6 @@
 	onMount(() => {
 		const removeDiag = installPlayDiag();
 		const removeKeyGuard = installGameKeyGuard();
-		const removeViewportFit = playRoot ? installVisualViewportFit(playRoot) : () => {};
 		document.documentElement.classList.add('play-mode');
 		document.documentElement.style.overflow = 'hidden';
 		document.body.style.overflow = 'hidden';
@@ -155,7 +152,6 @@
 
 		return () => {
 			removeKeyGuard();
-			removeViewportFit();
 			removeDiag();
 			document.documentElement.classList.remove('play-mode');
 			document.documentElement.style.overflow = '';
@@ -185,7 +181,7 @@
 	{/if}
 </svelte:head>
 
-<div class="play-root" bind:this={playRoot}>
+<div class="play-root">
 	<div id="play-stage" class="play-stage">
 		<div id="play-transition" class="play-transition" aria-live="polite">
 			<p id="play-transition-status">Loading {pack.client.name}…</p>
