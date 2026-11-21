@@ -307,7 +307,8 @@ export async function buildOtcLoginResponse(
 					worldid: player.world_id ?? gameWorlds[0]?.id ?? 0,
 					name: player.name,
 					ismale: player.sex === Number(PlayerSex.Male),
-					tutorial: player.istutorial,
+					// JSON booleans: the client reads 0/1 as missing (tutorial then defaults to true).
+					tutorial: Boolean(player.istutorial),
 					level: player.level,
 					vocation: loginVocationName(player.vocation),
 					outfitid: player.looktype,
@@ -317,7 +318,7 @@ export async function buildOtcLoginResponse(
 					detailcolor: player.lookfeet,
 					addonsflags: player.lookaddons,
 					ishidden: Boolean(player.settings?.hidden),
-					ismaincharacter: player.is_main,
+					ismaincharacter: Boolean(player.is_main),
 					dailyrewardstate: player.isreward ? 1 : 0,
 					isonline: player.online != null,
 				})),
