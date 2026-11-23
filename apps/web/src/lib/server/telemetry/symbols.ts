@@ -42,6 +42,23 @@ async function firstLine(path: string): Promise<string> {
 	return '';
 }
 
+/**
+ * `GET ?code_file=&debug_id=`: 204 when that Breakpad module is stored, else
+ * 404, so CI uploads only the modules (Qt, mostly) the store lacks.
+ */
+export async function hasSymbol(request: Request): Promise<Response> {
+	if (!symbolUploadToken()) return new Response('symbol upload disabled', { status: 404 });
+	if (!authorized(request)) return new Response('unauthorized', { status: 401 });
+	const url = new URL(request.url);
+	const codeFile = url.searchParams.get('code_file') ?? '';
+	const debugId = url.searchParams.get('debug_id') ?? '';
+	if (!SAFE.test(codeFile) || !SAFE.test(debugId)) return new Response('bad query', { status: 400 });
+	const row = await prisma.symbolFile.findUnique({
+		where: { kind_debug_id_code_file: { kind: 'breakpad', debug_id: debugId, code_file: codeFile } },
+	});
+	return new Response(null, { status: row && existsSync(join(symbolsDir(), row.path)) ? 204 : 404 });
+}
+
 export async function uploadSymbols(request: Request): Promise<Response> {
 	if (!symbolUploadToken()) return new Response('symbol upload disabled', { status: 404 });
 	if (!authorized(request)) return new Response('unauthorized', { status: 401 });

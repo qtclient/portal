@@ -6,6 +6,7 @@
 | `POST /api/telemetry/crash` | `/play` | JSON `{ name, message, stack, stage, revision, userAgent }` |
 | `POST /clientservices/hardwarereceiver.php` | client (`fpsHistoryRecipient`) | JSON object or array. `dataType: "FPSHistory"` entries: `clientID`, `renderer`, `timeStamp` (`yyyy-MM-dd hh:mm:ss,zzz`), `averageFPS`, `minFPS`, `maxFPS`. Other objects are stored as system surveys. `/play` also posts `dataType: "BrowserGate"` surveys when it refuses to boot (below). |
 | `POST /api/telemetry/symbols` | CI | `Authorization: Bearer $QTCAAC_SYMBOL_UPLOAD_TOKEN`, multipart `file`: Breakpad `.sym`, or a WASM source map (`*.wasm.map`) plus a `revision` field |
+| `GET /api/telemetry/symbols?code_file=&debug_id=` | CI | Same bearer token: `204` when that Breakpad module is stored, `404` otherwise, so CI uploads only missing modules |
 
 The client revision comes from `X-Tibia-Client` / `X-Qtclient-Revision` or the
 payload (`revision`, `ver`, `version`, or CipSoft's `Version`). The crash
