@@ -7,9 +7,11 @@ import { PlayerSex, PlayerVocation } from '#lib/players.js';
 import { prisma } from '#lib/server/prisma.js';
 import {
 	runtimeCrystalWebsocketPort,
+	runtimeCrystalWebsocketPortUnprotected,
 	runtimeGameWsHost,
 	runtimeServerAddress,
 	runtimeServerPort,
+	runtimeServerPortUnprotected,
 } from '#lib/server/runtimeEnv.js';
 import {
 	listGameWorlds,
@@ -118,6 +120,7 @@ export type OtcLoginResponse = {
 			pvptype: number;
 			restrictedstore: boolean;
 			websocketport: number;
+			websocketportunprotected: number;
 		}>;
 		characters: Array<{
 			worldid: number;
@@ -169,7 +172,9 @@ function isAdvertiseTrustedHost(host: string): boolean {
 export function resolveClientAdvertise(request: Request): {
 	address: string;
 	websocketPort: number;
+	websocketPortUnprotected: number;
 	gamePort: number;
+	gamePortUnprotected: number;
 } {
 	const url = new URL(request.url);
 	const raw =
@@ -196,14 +201,22 @@ export function resolveClientAdvertise(request: Request): {
 	}
 
 	const websocketPort = runtimeCrystalWebsocketPort();
+	const websocketPortUnprotected = runtimeCrystalWebsocketPortUnprotected();
 	const gamePort = parseInt(runtimeServerPort(), 10) || 7172;
+	const gamePortUnprotected = runtimeServerPortUnprotected();
+	const ports = {
+		websocketPort,
+		websocketPortUnprotected,
+		gamePort,
+		gamePortUnprotected,
+	};
 
 	const gameWsHost = runtimeGameWsHost();
 	if (gameWsHost) {
-		return { address: gameWsHost, websocketPort, gamePort };
+		return { address: gameWsHost, ...ports };
 	}
 
-	return { address, websocketPort, gamePort };
+	return { address, ...ports };
 }
 
 /** Create Crystal `account_sessions` row; returns plaintext session key for OTC. */
@@ -252,6 +265,10 @@ export async function buildOtcLoginResponse(
 	// advertise that hostname — browsers open wss:// and reject certs on bare
 	// IPs. Desktop TCP still reaches the same A-record :7172. Otherwise prefer
 	// worlds.ip when set.
+	//
+	// As CipSoft's, each world has two game endpoints: the protected one (the
+	// client's first connection) and the unprotected one (its secondary
+	// connection), on their own ports.
 	const preferTlsHost = !!runtimeGameWsHost();
 	const loginWorlds = gameWorlds.map((world) => {
 		const tcpPort =
@@ -270,14 +287,16 @@ export async function buildOtcLoginResponse(
 			externaladdressprotected: address,
 			externalportprotected: tcpPort,
 			externaladdressunprotected: address,
-			externalportunprotected: tcpPort,
+			externalportunprotected: advertise.gamePortUnprotected,
 			previewstate: 0,
 			location: locationCode(world.location),
 			anticheatprotection: false,
 			pvptype: pvpTypeFromWorldType(world.type),
 			restrictedstore: false,
-			// Browser /play: shared Crystal WS listener (not a CipSoft field).
+			// Browser /play: Crystal WS listeners (not CipSoft fields; 0 = no
+			// secondary connection).
 			websocketport: advertise.websocketPort,
+			websocketportunprotected: advertise.websocketPortUnprotected,
 		};
 	});
 

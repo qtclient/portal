@@ -18,6 +18,12 @@ export function runtimeServerPort(): string {
 	return read('SERVER_PORT', '7172');
 }
 
+/** CipSoft login `externalportunprotected`: the game server's second endpoint (the client's secondary connection). */
+export function runtimeServerPortUnprotected(): number {
+	const n = Number(read('SERVER_PORT_UNPROTECTED', '7175'));
+	return Number.isFinite(n) && n > 0 ? n : 7175;
+}
+
 export function runtimeStatusPort(): string {
 	return read('STATUS_PORT', '7171');
 }
@@ -35,6 +41,15 @@ export function runtimePvpType(): string {
 export function runtimeCrystalWebsocketPort(): number {
 	const n = Number(read('QTCAAC_CRYSTAL_WEBSOCKET_PORT', '7174'));
 	return Number.isFinite(n) && n > 0 ? n : 7174;
+}
+
+/**
+ * Browser secondary connection: the game server's second WebSocket port, advertised
+ * in login JSON as `websocketportunprotected` (not a CipSoft field). 0 = none.
+ */
+export function runtimeCrystalWebsocketPortUnprotected(): number {
+	const n = Number(read('QTCAAC_CRYSTAL_WEBSOCKET_PORT_UNPROTECTED', '7176'));
+	return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 /**
