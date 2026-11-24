@@ -10,6 +10,7 @@ import {
 	runtimeCrystalWebsocketPortUnprotected,
 	runtimeGameWsHost,
 	runtimeServerAddress,
+	runtimeServerAddressUnprotected,
 	runtimeServerPort,
 	runtimeServerPortUnprotected,
 } from '#lib/server/runtimeEnv.js';
@@ -169,6 +170,33 @@ function isAdvertiseTrustedHost(host: string): boolean {
 	return false;
 }
 
+function isLoopbackHost(host: string): boolean {
+	return (
+		host === 'localhost' ||
+		host === '::1' ||
+		host === '0.0.0.0' ||
+		/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
+	);
+}
+
+/**
+ * CipSoft's unprotected endpoint host for a world whose protected host is
+ * `address`: SERVER_ADDRESS_UNPROTECTED for this server's own host
+ * (QTCAAC_GAME_WS_HOST / SERVER_ADDRESS / loopback), never a loopback name
+ * for a public host. Otherwise the protected host (the client then keeps one
+ * connection, as CipSoft's client does when both endpoints are equal).
+ */
+export function unprotectedAddressFor(address: string): string {
+	const unprotected = runtimeServerAddressUnprotected();
+	if (!unprotected || isLoopbackHost(unprotected) !== isLoopbackHost(address)) {
+		return address;
+	}
+	const own = [runtimeGameWsHost(), runtimeServerAddress()].filter(Boolean);
+	return own.includes(address) || isLoopbackHost(address)
+		? unprotected
+		: address;
+}
+
 export function resolveClientAdvertise(request: Request): {
 	address: string;
 	websocketPort: number;
@@ -202,7 +230,7 @@ export function resolveClientAdvertise(request: Request): {
 
 	const websocketPort = runtimeCrystalWebsocketPort();
 	const websocketPortUnprotected = runtimeCrystalWebsocketPortUnprotected();
-	const gamePort = parseInt(runtimeServerPort(), 10) || 7172;
+	const gamePort = parseInt(runtimeServerPort(), 10) || 7171;
 	const gamePortUnprotected = runtimeServerPortUnprotected();
 	const ports = {
 		websocketPort,
@@ -263,12 +291,13 @@ export async function buildOtcLoginResponse(
 	//
 	// Host: when QTCAAC_GAME_WS_HOST is set (e.g. game.example.com), always
 	// advertise that hostname — browsers open wss:// and reject certs on bare
-	// IPs. Desktop TCP still reaches the same A-record :7172. Otherwise prefer
+	// IPs. Desktop TCP still reaches the same A-record :7171. Otherwise prefer
 	// worlds.ip when set.
 	//
 	// As CipSoft's, each world has two game endpoints: the protected one (the
 	// client's first connection) and the unprotected one (its secondary
-	// connection), on their own ports.
+	// connection). CipSoft serves both on port 7171 under two host names
+	// (prod-cf-*/prod-lb-*.tibia.com); here SERVER_ADDRESS_UNPROTECTED.
 	const preferTlsHost = !!runtimeGameWsHost();
 	const loginWorlds = gameWorlds.map((world) => {
 		const tcpPort =
@@ -286,7 +315,7 @@ export async function buildOtcLoginResponse(
 			externalport: tcpPort,
 			externaladdressprotected: address,
 			externalportprotected: tcpPort,
-			externaladdressunprotected: address,
+			externaladdressunprotected: unprotectedAddressFor(address),
 			externalportunprotected: advertise.gamePortUnprotected,
 			previewstate: 0,
 			location: locationCode(world.location),

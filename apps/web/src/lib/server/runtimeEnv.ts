@@ -14,18 +14,35 @@ export function runtimeServerAddress(): string {
 	return read('SERVER_ADDRESS', '127.0.0.1').trim();
 }
 
+/**
+ * CipSoft login `externaladdressunprotected`: the host of the game server's
+ * second endpoint (the client's secondary connection). CipSoft serves both
+ * endpoints on one port under two host names, so a distinct host is what makes
+ * the second endpoint distinct. Empty = the protected host (one connection).
+ */
+export function runtimeServerAddressUnprotected(): string {
+	return read('SERVER_ADDRESS_UNPROTECTED', '').trim();
+}
+
+/** CipSoft login `externalportprotected`: CipSoft's game port is 7171. */
 export function runtimeServerPort(): string {
-	return read('SERVER_PORT', '7172');
+	return read('SERVER_PORT', '7171');
 }
 
-/** CipSoft login `externalportunprotected`: the game server's second endpoint (the client's secondary connection). */
+/** CipSoft login `externalportunprotected`: the same port as the protected endpoint at CipSoft (7171). */
 export function runtimeServerPortUnprotected(): number {
-	const n = Number(read('SERVER_PORT_UNPROTECTED', '7175'));
-	return Number.isFinite(n) && n > 0 ? n : 7175;
+	const n = Number(read('SERVER_PORT_UNPROTECTED', '7171'));
+	return Number.isFinite(n) && n > 0 ? n : 7171;
 }
 
+/** Crystal ProtocolStatus port (worlds.port_status); the online-status probe target. */
 export function runtimeStatusPort(): string {
-	return read('STATUS_PORT', '7171');
+	return read('STATUS_PORT', '7173');
+}
+
+/** Host of the online-status probe (e.g. the server's container name); default SERVER_ADDRESS. */
+export function runtimeStatusAddress(): string {
+	return read('STATUS_ADDRESS', '').trim() || runtimeServerAddress();
 }
 
 /** Bootstrap CipSoft world name when `worlds` is empty — keep in sync with Crystal serverName / WORLD_ID row. */

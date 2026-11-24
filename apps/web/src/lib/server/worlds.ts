@@ -70,7 +70,7 @@ export async function listGameWorlds(): Promise<GameWorldRow[]> {
 		);
 	}
 
-	const gamePort = parseInt(runtimeServerPort(), 10) || 7172;
+	const gamePort = parseInt(runtimeServerPort(), 10) || 7171;
 	return [
 		{
 			id: 1,
@@ -79,7 +79,7 @@ export async function listGameWorlds(): Promise<GameWorldRow[]> {
 			location: 'South America',
 			ip: runtimeServerAddress() || '127.0.0.1',
 			port: gamePort,
-			port_status: parseInt(runtimeStatusPort(), 10) || 7171,
+			port_status: parseInt(runtimeStatusPort(), 10) || 7173,
 		},
 	];
 }

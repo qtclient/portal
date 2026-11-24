@@ -2,13 +2,15 @@ import { check as checkPort } from 'tcp-port-used';
 
 import { PlayerGroup } from '#lib/players.js';
 import { prisma } from '#lib/server/prisma.js';
-import { runtimeServerAddress } from '#lib/server/runtimeEnv.js';
+import {
+	runtimeStatusAddress,
+	runtimeStatusPort,
+} from '#lib/server/runtimeEnv.js';
 
-/** Probe status/login port — not gameProtocolPort (avoids ProtocolGame connect noise). */
+/** Probe Crystal's status port — not the game port (avoids ProtocolGame connect noise). */
 function statusProbePort(): number {
-	const raw = process.env.STATUS_PORT || process.env.LOGIN_PORT || '7171';
-	const n = Number(raw);
-	return Number.isFinite(n) && n > 0 ? n : 7171;
+	const n = Number(runtimeStatusPort());
+	return Number.isFinite(n) && n > 0 ? n : 7173;
 }
 
 export async function serverStatus(): Promise<{
@@ -17,7 +19,7 @@ export async function serverStatus(): Promise<{
 }> {
 	let serverOnline = false;
 	try {
-		serverOnline = await checkPort(statusProbePort(), runtimeServerAddress());
+		serverOnline = await checkPort(statusProbePort(), runtimeStatusAddress());
 	} catch {
 		serverOnline = false;
 	}
