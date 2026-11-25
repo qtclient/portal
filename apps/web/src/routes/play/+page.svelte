@@ -167,7 +167,7 @@
 	<title>{browserTitle(data.title)}</title>
 	<meta
 		name="viewport"
-		content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+		content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
 	<link rel="manifest" href="/play/manifest.webmanifest" />
 	<meta name="theme-color" content="#0b0e12" />
 	<meta name="mobile-web-app-capable" content="yes" />

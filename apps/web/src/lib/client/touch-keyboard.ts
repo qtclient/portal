@@ -1,25 +1,21 @@
 /**
- * /play on touch devices: let a late Qt still open the on-screen keyboard.
+ * iOS Safari only raises the keyboard for focus() made on the user-gesture
+ * call stack. Qt wasm + JSPI queues pointerdown and runs C++ (including
+ * QWasmInputContext::updateInputElement → input.focus()) after dispatch —
+ * too late: Safari flashes the accessory/URL chrome and shows no keyboard.
  *
- * iOS Safari only raises the keyboard for a focus() made while the tap is
- * being dispatched. Qt wasm handles a tap from its event queue whenever the
- * instance was suspended (JSPI) or busy, which on a phone can be more than a
- * second later: Qt then focuses its hidden IME input outside the gesture and
- * Safari flashes the input accessory bar but shows no keyboard.
+ * Root cause fix: during the tap itself, re-focus the window's IME input when
+ * Qt already configured it for text (inputMode !== "none"). Login fields get
+ * activeFocus on show, so the element already has a real inputMode/type; we
+ * only need the focus() call to happen in-gesture.
  *
- * So, during the tap itself, focus the window's IME input with
- * `inputmode="none"`: that starts Safari's input session without a keyboard.
- * When Qt later wants text input it sets `inputMode` and calls focus() on the
- * same element, and Safari only has to swap the keyboard of a session the
- * user started, which it allows outside the gesture. Qt's own code path for
- * the first text focus calls focus() on the window's focus helper just
- * before the IME input; while a primed session is waiting for Qt, that call
- * is held back so it does not end the session. A tap Qt does not turn into
- * text input hands focus back to the helper once the wait is over.
+ * Do NOT prime with inputmode="none": that replaces Qt's real mode, Safari
+ * never opens a keyboard for "none", and a later inputMode change outside the
+ * gesture does not upgrade the session (URL bar bounce, no keys).
+ *
+ * Changing input.type while focused also dismisses the iOS keyboard; defer
+ * type writes on the IME element until it blurs.
  */
-
-/** How long a primed input waits for Qt's late handling of the tap. */
-const QT_LATE_MS = 4000;
 
 type QtWindowParts = { input: HTMLInputElement; helper: HTMLElement };
 
@@ -51,59 +47,70 @@ function keyboardShown(): boolean {
 	return !!vv && window.innerHeight - vv.height * vv.scale > 120;
 }
 
-export function installTouchKeyboardPriming(screen: HTMLElement): () => void {
-	const helperFocus = new WeakMap<HTMLElement, () => void>();
-	let primed: (QtWindowParts & { until: number; timer: number }) | null = null;
+const guardedInputs = new WeakSet<HTMLInputElement>();
 
-	const settle = () => {
-		if (!primed) return;
-		const { input, helper } = primed;
-		primed = null;
-		// Qt never asked for text input: give focus back to Qt's helper, as Qt
-		// would have, so the idle IME input does not keep the session.
-		if (deepActiveElement() === input && input.inputMode === 'none')
-			helperFocus.get(helper)?.();
-	};
+/**
+ * iOS drops the keyboard when a focused <input>'s type changes (e.g. Qt
+ * flipping text ↔ password for echoMode). Queue the write until blur.
+ */
+function guardInputTypeWhileFocused(input: HTMLInputElement): void {
+	if (guardedInputs.has(input)) return;
+	guardedInputs.add(input);
 
-	const holdHelperFocus = (helper: HTMLElement) => {
-		if (helperFocus.has(helper)) return;
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- intentional extract + .call(this)
-		const original = HTMLElement.prototype.focus;
-		helperFocus.set(helper, () =>
-			original.call(helper, { preventScroll: true }),
-		);
-		helper.focus = function (this: HTMLElement, options?: FocusOptions) {
-			if (primed && primed.helper === this && performance.now() < primed.until)
+	const desc =
+		Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'type') ??
+		Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'type');
+	if (!desc?.get || !desc?.set) return;
+
+	let pending: string | null = null;
+	Object.defineProperty(input, 'type', {
+		configurable: true,
+		enumerable: desc.enumerable ?? true,
+		get() {
+			return pending ?? desc.get!.call(this);
+		},
+		set(value: string) {
+			const next = String(value);
+			if (deepActiveElement() === this && desc.get!.call(this) !== next) {
+				pending = next;
 				return;
-			original.call(this, options);
-		};
-	};
+			}
+			pending = null;
+			desc.set!.call(this, next);
+		},
+	});
+	input.addEventListener('blur', () => {
+		if (pending === null) return;
+		const next = pending;
+		pending = null;
+		desc.set!.call(input, next);
+	});
+}
 
+export function installTouchKeyboardPriming(screen: HTMLElement): () => void {
 	const onPointerDown = (event: PointerEvent) => {
 		if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
-		// Keyboard already up (typing in chat, moving the caret): leave it to Qt.
 		if (keyboardShown()) return;
 		const parts = qtWindowParts(event);
 		if (!parts) return;
-		holdHelperFocus(parts.helper);
-		if (primed) window.clearTimeout(primed.timer);
-		// Already focused but with no keyboard up means Qt focused it outside a
-		// gesture (no input session): refocus so this tap starts one.
+
+		guardInputTypeWhileFocused(parts.input);
+
+		const mode = parts.input.inputMode || 'text';
+		// Qt has not asked for text input yet (focus helper owns the window).
+		// Do not invent a session — a blind focus() opens the keyboard on every
+		// map tap. Login forceActiveFocus configures inputMode before the tap.
+		if (mode === 'none') return;
+
+		// Already focused from Qt's late focus() (no keyboard): blur+focus inside
+		// the gesture starts a real Safari input session.
 		if (deepActiveElement() === parts.input) parts.input.blur();
-		parts.input.inputMode = 'none';
 		parts.input.focus({ preventScroll: true });
-		primed = {
-			...parts,
-			until: performance.now() + QT_LATE_MS,
-			timer: window.setTimeout(settle, QT_LATE_MS),
-		};
 	};
 
-	// Capture: runs during dispatch, before Qt's own handler on its window.
+	// Capture: still on the user-gesture stack, before Qt's queued handler.
 	screen.addEventListener('pointerdown', onPointerDown, true);
 	return () => {
 		screen.removeEventListener('pointerdown', onPointerDown, true);
-		if (primed) window.clearTimeout(primed.timer);
-		primed = null;
 	};
 }

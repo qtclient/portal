@@ -913,7 +913,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 	};
 	screen.addEventListener('pointerdown', onGamePointer);
 	bag.defer(() => screen.removeEventListener('pointerdown', onGamePointer));
-	// iOS: open the keyboard even when Qt handles the tap late (queued).
+	// iOS: focus the IME input on the gesture stack (JSPI focuses it too late).
 	bag.defer(installTouchKeyboardPriming(screen));
 
 	callbacks.onStatus?.(`Loading ${CLIENT_NAME}…`, 10);
