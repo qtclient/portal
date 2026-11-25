@@ -1,6 +1,6 @@
 /**
  * CIP package blobs are LZMA Alone (5-byte props + 8-byte unpacked size + payload),
- * same as apps/otclient/tibia/tibia/launcher/unpack.cpp.
+ * same as apps/qtclient launcher LZMA unpack.
  */
 import { decompress } from 'lzma1';
 

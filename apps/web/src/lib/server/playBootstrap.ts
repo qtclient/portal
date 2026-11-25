@@ -48,7 +48,7 @@ async function consumeCode(
 }
 
 /**
- * One-time code from a credential-verified OTClient login, so the website or
+ * One-time code from a credential-verified qtclient login, so the website or
  * launcher session can move to the account the player picked in the client.
  */
 export function issueSwitchCode(accountId: number): Promise<string> {

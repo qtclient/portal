@@ -849,7 +849,7 @@ model DeviceSessions {
 }
 
 /// Single-use login code. Only the sha256 is stored.
-/// purpose `play`: website/launcher → OTClient; `switch`: OTClient login → website/launcher session.
+/// purpose `play`: website/launcher → qtclient; `switch`: qtclient login → website/launcher session.
 model BootstrapCodes {
   code_hash  String   @id @db.Char(64)
   account_id Int      @db.UnsignedInt

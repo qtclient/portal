@@ -1,6 +1,6 @@
 /**
- * Page ↔ OTClient WASM contract. Every field here is read or called by
- * `apps/otclient/tibia/framework/platform/browserwindow.cpp` (EM_ASM), Emscripten
+ * Page ↔ qtclient WASM contract. Every field here is read or called by
+ * `apps/qtclient/client/tibia/` browser platform glue (EM_ASM), Emscripten
  * runtime glue, or the boot guard — keep names stable.
  */
 
