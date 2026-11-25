@@ -1,14 +1,14 @@
-export const OTC_SCRIPT_ATTR = 'data-otc-wasm';
+export const QTCLIENT_SCRIPT_ATTR = 'data-qtclient-wasm';
 
-/** Emscripten installs one-shot `let` bindings (e.g. EmscriptenEH); re-injecting otclient.js throws.
- *  Guards: script[data-otc-wasm] while loading/injected, __QTCLIENT_OTC_LOADED after parse, Module.calledRun. */
-export function otcWasmAlreadyLoaded(): boolean {
-	if (window.__QTCLIENT_OTC_LOADED) return true;
-	if (document.querySelector(`script[${OTC_SCRIPT_ATTR}]`)) return true;
+/** Emscripten installs one-shot `let` bindings; re-injecting tibia.js throws.
+ *  Guards: script[data-qtclient-wasm] while loading, __QTCLIENT_WASM_LOADED after parse, Module.calledRun. */
+export function qtclientWasmAlreadyLoaded(): boolean {
+	if (window.__QTCLIENT_WASM_LOADED) return true;
+	if (document.querySelector(`script[${QTCLIENT_SCRIPT_ATTR}]`)) return true;
 	return !!window.Module?.calledRun;
 }
 
-const AUTOSTART_KEY = 'qtcaac.otc.autostart';
+const AUTOSTART_KEY = 'qtcaac.play.autostart';
 
 /** Set by a remount reload: the reloaded /play launches without a second click. */
 export function takeAutostartFlag(): boolean {
@@ -21,17 +21,17 @@ export function takeAutostartFlag(): boolean {
 	}
 }
 
-const REMOUNT_COUNT_KEY = 'qtcaac.otc.remountCount';
+const REMOUNT_COUNT_KEY = 'qtcaac.play.remountCount';
 
-export function reloadForOtcRemount(reason: string): { destroy: () => void } {
+export function reloadForWasmRemount(reason: string): { destroy: () => void } {
 	console.warn(
-		`[otclient] ${reason} — reloading (Emscripten cannot re-init in-page)`,
+		`[qtclient] ${reason} — reloading (Emscripten cannot re-init in-page)`,
 	);
 	try {
 		const count = Number(sessionStorage.getItem(REMOUNT_COUNT_KEY) || '0') || 0;
 		if (count >= 2) {
 			console.error(
-				`[otclient] ${reason} — remount loop stopped after ${count} reloads`,
+				`[qtclient] ${reason} — remount loop stopped after ${count} reloads`,
 			);
 			return { destroy() {} };
 		}
@@ -46,7 +46,7 @@ export function reloadForOtcRemount(reason: string): { destroy: () => void } {
 }
 
 /** Clear remount-loop counter after a clean boot. */
-export function clearOtcRemountCount(): void {
+export function clearWasmRemountCount(): void {
 	try {
 		sessionStorage.removeItem(REMOUNT_COUNT_KEY);
 	} catch {

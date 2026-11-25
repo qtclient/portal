@@ -1,5 +1,5 @@
 /**
- * CSS magnify on #tibia-screen (OTUI shell OTC_VIEW_GESTURE).
+ * CSS magnify on #tibia-screen (QTCLIENT_VIEW_GESTURE).
  * Does not resize the Qt play box — uiScale stays independent.
  * Only two-finger pinch / ctrl+wheel own the pointer; single-finger stays with Qt.
  */
@@ -42,7 +42,7 @@ export function attachViewMagnify(screen: HTMLElement): () => void {
 
 	const setGesture = (on: boolean) => {
 		active = on;
-		window.OTC_VIEW_GESTURE = on;
+		window.QTCLIENT_VIEW_GESTURE = on;
 	};
 
 	const apply = () => {

@@ -1,9 +1,9 @@
 export const clamp = (value: number, min: number, max: number) =>
 	Math.max(min, Math.min(max, value));
 
-/** HUD displayDensity last applied by otcApplyUiScale (1 until the engine sets it). */
+/** HUD displayDensity (1 until the engine sets QTCLIENT_UI_SCALE). */
 export const currentDensity = () => {
-	const s = window.OTC_UI_SCALE;
+	const s = window.QTCLIENT_UI_SCALE;
 	return s && s > 0 ? s : 1;
 };
 
@@ -37,27 +37,6 @@ export function clearSessionCooldown(key: string) {
 		sessionStorage.removeItem(key);
 	} catch {
 		/* ignore */
-	}
-}
-
-type WasmExport =
-	| '_otc_sync_shell_layout'
-	| '_otc_request_shell_layout'
-	| '_otc_signal_dom_input';
-
-/** Calls a KEEPALIVE export; false if main has not run yet or the call threw. */
-export function callModuleExport(name: WasmExport): boolean {
-	const mod = window.Module;
-	// Do not read Module.asm — newer Emscripten aborts on that getter (use wasmExports).
-	// Stubs exist as soon as otclient.js parses; call only after main has run.
-	if (!mod?.calledRun) return false;
-	const fn = mod[name];
-	if (typeof fn !== 'function') return false;
-	try {
-		fn();
-		return true;
-	} catch {
-		return false;
 	}
 }
 

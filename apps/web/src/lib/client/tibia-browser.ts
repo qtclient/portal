@@ -25,13 +25,13 @@ import {
 } from './cip-package.js';
 import { reportBrowserCrash } from './crash-report';
 import { closeOpfsWriter } from './opfs.js';
-import { createListenerBag, sessionCooldown } from './otc/dom-util';
+import { createListenerBag, sessionCooldown } from './browser/dom-util';
 import {
-	clearOtcRemountCount,
-	OTC_SCRIPT_ATTR,
-	otcWasmAlreadyLoaded,
-	reloadForOtcRemount,
-} from './otc/wasm-guard';
+	clearWasmRemountCount,
+	QTCLIENT_SCRIPT_ATTR,
+	qtclientWasmAlreadyLoaded,
+	reloadForWasmRemount,
+} from './browser/wasm-guard';
 import { diag, diagWarn } from './play-diag';
 import { installTouchKeyboardPriming } from './touch-keyboard';
 import { attachViewMagnify } from './view-magnify';
@@ -500,7 +500,7 @@ export async function loadScriptFromBytes(
 	await new Promise<void>((resolve, reject) => {
 		const script = document.createElement('script');
 		script.async = true;
-		if (attr) script.setAttribute(OTC_SCRIPT_ATTR, attr);
+		if (attr) script.setAttribute(QTCLIENT_SCRIPT_ATTR, attr);
 		script.src = url;
 		script.onload = () => resolve();
 		script.onerror = () => reject(new Error('Failed to load script blob'));
@@ -681,11 +681,11 @@ function loginEnvironment(opts: TibiaBootOptions): Record<string, string> {
 }
 
 export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
-	if (otcWasmAlreadyLoaded()) {
+	if (qtclientWasmAlreadyLoaded()) {
 		diagWarn('WASM already loaded — remount reload');
-		return reloadForOtcRemount('WASM already loaded');
+		return reloadForWasmRemount('WASM already loaded');
 	}
-	clearOtcRemountCount();
+	clearWasmRemountCount();
 
 	const launcherEngine = callbacks.engine === 'launcher';
 	const jsName = launcherEngine ? 'launcher.js' : 'tibia.js';
@@ -918,8 +918,8 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 
 	callbacks.onStatus?.(`Loading ${CLIENT_NAME}…`, 10);
 	(
-		window as unknown as { __QTCLIENT_OTC_LOADED?: boolean }
-	).__QTCLIENT_OTC_LOADED = true;
+		window as unknown as { __QTCLIENT_WASM_LOADED?: boolean }
+	).__QTCLIENT_WASM_LOADED = true;
 
 	void (async () => {
 		try {
