@@ -1,7 +1,7 @@
 # Security
 
 Please report vulnerabilities privately through
-[GitHub security advisories](https://github.com/qtclient/qtc-aac/security/advisories/new)
+[GitHub security advisories](https://github.com/qtclient/portal/security/advisories/new)
 rather than public issues. Include the affected version or commit, steps to
 reproduce and the impact you observed. We aim to acknowledge reports within a
 few days.

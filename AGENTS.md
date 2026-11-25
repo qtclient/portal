@@ -1,12 +1,13 @@
 # AGENTS.md
 
-Guidance for coding agents working in qtc-aac.
+Guidance for coding agents working in **qtclient/portal** (OSS web Host).
 
 ## Layout
 
 | Path | Role |
 |------|------|
 | `apps/web` | SvelteKit app (`@qtc-aac/web`): site, AAC, admin, clientservices, `/play`, telemetry |
+| `apps/cdn` | Base CDN tip image / nginx config (SoT for `ghcr.io/idleot/cdn:runtime-*`) |
 | `apps/web/src/lib/server/telemetry` | crash / FPS ingest, symbolication, retention |
 | `apps/web/src/lib/pack-api.ts` | the only surface packs implement |
 | `apps/web/src/lib/pack-default` | fallbacks for missing pack modules |
