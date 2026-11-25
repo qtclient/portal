@@ -15,6 +15,13 @@
  *
  * Changing input.type while focused also dismisses the iOS keyboard; defer
  * type writes on the IME element until it blurs.
+ *
+ * Separately: Qt's wasm platform calls releasePointerCapture on pointerup
+ * without checking hasPointerCapture. Safari often releases capture itself
+ * when the keyboard opens / the touch ends, so the call throws NotFoundError,
+ * the exception escapes Qt's event handler, and the WASM instance dies.
+ * installSafePointerCapture mirrors the stock Qt hasPointerCapture guard
+ * until the next qtclient/Qt5 kit pin.
  */
 
 type QtWindowParts = { input: HTMLInputElement; helper: HTMLElement };
@@ -86,6 +93,46 @@ function guardInputTypeWhileFocused(input: HTMLInputElement): void {
 		desc.set!.call(input, next);
 	});
 }
+
+/**
+ * Swallow NotFoundError from Element.releasePointerCapture when the browser
+ * already released capture (iOS Safari + Qt wasm pointerup). Idempotent.
+ */
+export function installSafePointerCapture(): () => void {
+	const proto = Element.prototype;
+	const original = proto.releasePointerCapture;
+	const marker = '__qtSafeReleasePointerCapture' as const;
+	if ((proto as ElementPrototypeWithMarker)[marker]) return () => {};
+
+	proto.releasePointerCapture = function (
+		this: Element,
+		pointerId: number,
+	): void {
+		try {
+			if (
+				typeof this.hasPointerCapture === 'function' &&
+				!this.hasPointerCapture(pointerId)
+			) {
+				return;
+			}
+			original.call(this, pointerId);
+		} catch (error) {
+			if (error instanceof DOMException && error.name === 'NotFoundError')
+				return;
+			throw error;
+		}
+	};
+	(proto as ElementPrototypeWithMarker)[marker] = true;
+
+	return () => {
+		proto.releasePointerCapture = original;
+		delete (proto as ElementPrototypeWithMarker)[marker];
+	};
+}
+
+type ElementPrototypeWithMarker = typeof Element.prototype & {
+	__qtSafeReleasePointerCapture?: boolean;
+};
 
 export function installTouchKeyboardPriming(screen: HTMLElement): () => void {
 	const onPointerDown = (event: PointerEvent) => {

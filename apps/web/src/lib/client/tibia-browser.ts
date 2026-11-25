@@ -33,7 +33,10 @@ import {
 	reloadForWasmRemount,
 } from './browser/wasm-guard';
 import { diag, diagWarn } from './play-diag';
-import { installTouchKeyboardPriming } from './touch-keyboard';
+import {
+	installSafePointerCapture,
+	installTouchKeyboardPriming,
+} from './touch-keyboard';
 import { attachViewMagnify } from './view-magnify';
 
 /** The client package the launcher installs (tip `directoryname`). */
@@ -913,6 +916,8 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 	};
 	screen.addEventListener('pointerdown', onGamePointer);
 	bag.defer(() => screen.removeEventListener('pointerdown', onGamePointer));
+	// iOS: Qt releasePointerCapture NotFoundError kills WASM; guard until kit pin.
+	bag.defer(installSafePointerCapture());
 	// iOS: focus the IME input on the gesture stack (JSPI focuses it too late).
 	bag.defer(installTouchKeyboardPriming(screen));
 
