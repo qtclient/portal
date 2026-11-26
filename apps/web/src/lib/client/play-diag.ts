@@ -9,7 +9,8 @@
 
 const STORAGE_KEY = 'qtcaac.play.diag.v1';
 const BOOT_ID_KEY = 'qtcaac.play.diag.boot';
-const MAX_EVENTS = 120;
+/** Dense mem.phase ticks + IME need more headroom before Safari jetsam. */
+const MAX_EVENTS = 220;
 const FLUSH_MS = 250;
 
 export type DiagEvent = {

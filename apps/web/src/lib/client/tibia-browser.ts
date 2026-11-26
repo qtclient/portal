@@ -32,6 +32,7 @@ import {
 	qtclientWasmAlreadyLoaded,
 	reloadForWasmRemount,
 } from './browser/wasm-guard';
+import { installMemPhase, type FsSnap, type HeapMb } from './mem-phase';
 import { diag, diagWarn } from './play-diag';
 import {
 	installSafePointerCapture,
@@ -812,6 +813,37 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 		liveModule = mod;
 		const timer = window.setInterval(() => void logHeapAndFs('heap'), 30_000);
 		bag.defer(() => window.clearInterval(timer));
+
+		const memPhase = installMemPhase({
+			readHeap: (): HeapMb => {
+				const snap = wasmHeapSnap();
+				const h = (snap.heapMb ?? {}) as Record<string, number | null>;
+				return {
+					inUse: h.inUse ?? null,
+					maxFootprint: h.maxFootprint ?? null,
+					sbrkTop: h.sbrkTop ?? null,
+					reserved: h.reserved ?? null,
+				};
+			},
+			readFs: async (): Promise<FsSnap | null> => {
+				const fs = liveModule?.qtclientFs;
+				if (!fs) return null;
+				const w = await fs.stats();
+				return {
+					calls: w.stats.calls,
+					ms: Math.round(w.stats.ms),
+					readMb: mb(w.stats.bytesRead),
+					writtenMb: mb(w.stats.bytesWritten),
+					hotPaths: w.hotPaths ?? [],
+				};
+			},
+		});
+		bag.defer(() => memPhase.dispose());
+		(
+			globalThis as unknown as { __qtMemPhase?: typeof memPhase }
+		).__qtMemPhase = memPhase;
+		// gameUiReady can race ahead of prepareInstance on a warm remount.
+		if (gameUiReadyFired) memPhase.onGameUiReady();
 	};
 	bag.listen(window, 'error', ((ev: ErrorEvent) => {
 		const snap = wasmHeapSnap();
@@ -876,6 +908,11 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 			skipLauncher: !!callbacks.skipLauncher,
 		});
 		void logHeapAndFs('heap at gameUiReady');
+		(
+			globalThis as unknown as {
+				__qtMemPhase?: { onGameUiReady: () => void };
+			}
+		).__qtMemPhase?.onGameUiReady();
 		callbacks.onGameReady?.();
 	};
 	const prevGameUiReady = (
