@@ -6,7 +6,7 @@
  * browser without JSPI cannot start them at all. JSPI shipped in Chrome/Edge
  * 137, Firefox 153 and Safari 27 (iOS/iPadOS 27 — every iOS browser runs
  * Safari's engine). This file is the only place that floor is written down:
- * the unsupported-browser message and docs/telemetry.md follow it.
+ * the unsupported-browser message and telemetry ingest follow it.
  *
  * The /play gate itself feature-detects (`wasmJspiSupported`); the versions
  * here only pick the advice shown to the player and label gate telemetry.

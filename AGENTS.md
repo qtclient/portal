@@ -23,8 +23,8 @@ Guidance for coding agents working in **qtclient/portal** (OSS web Host).
   Pack modules are imported as `$pack/config`, `$pack/hooks.server`, `$pack/play.client`.
 - Never add product branding, hostnames or content to the core. Make it a pack
   config field or hook with a neutral default instead.
-- Never commit game art or client binaries. Assets come from a qtclient tip
-  (`docs/assets.md`).
+- Never commit game art or client binaries. Assets come from a qtclient Dist /
+  CDN release.
 - Env is runtime-only: declare variables in `apps/web/src/env.ts`, read them via
   `$app/env/*` or `process.env` at call time — never bake config into the image.
 - Migrations must be idempotent (`IF NOT EXISTS`, the `Add*IfNotExists`

@@ -39,31 +39,28 @@ existing database on first boot) and starts the server.
 
 ## Assets
 
-Sprites and the browser client come from a **qtclient CDN tip**
-(`QTCAAC_ASSET_BASE`) — see [docs/assets.md](docs/assets.md). Without one,
-point `QTCAAC_ITEM_IMAGES_URL` / `QTCAAC_OUTFIT_IMAGES_URL` at any
-MyAAC-compatible image host.
+Sprites and the browser client come from a **CDN release**
+(`QTCAAC_ASSET_BASE`). Without one, point `QTCAAC_ITEM_IMAGES_URL` /
+`QTCAAC_OUTFIT_IMAGES_URL` at any MyAAC-compatible image host.
 
-## Packs
+## Mods
 
-A pack is a directory with a `web/` tree that is applied on top of the core at
+A Web Mod is a directory with a `web/` tree applied on top of the Host at
 build time:
 
 ```bash
-QTCAAC_PACK=../my-pack make run          # applies + watches the pack
-docker build -f apps/web/Dockerfile --build-context pack=../my-pack .
+QTCAAC_PACK=../my-mod make run          # applies + watches the Mod
+docker build -f apps/web/Dockerfile --build-context pack=../my-mod .
 ```
 
-See [docs/packs.md](docs/packs.md) and the working example in
-[`examples/pack`](examples/pack).
+Working example: [`examples/pack`](examples/pack).
 
 ## Telemetry
 
 The client's crash reporter and FPS uploader post to
 `/clientservices/crashreceiver.php` and `/clientservices/hardwarereceiver.php`;
 `/play` reports browser crashes to `/api/telemetry/crash`. CI uploads debug
-symbols to `/api/telemetry/symbols`. See [docs/telemetry.md](docs/telemetry.md)
-and [PRIVACY.md](PRIVACY.md).
+symbols to `/api/telemetry/symbols`. See [PRIVACY.md](PRIVACY.md).
 
 ## Development
 

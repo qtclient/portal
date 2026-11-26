@@ -740,6 +740,25 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 			},
 		};
 	};
+	/** Safari's console collapses nested objects when copied — put numbers in the msg. */
+	const heapLine = (snap: Record<string, unknown>): string => {
+		const h = (snap.heapMb ?? null) as Record<string, number | null> | null;
+		if (!h) return typeof snap.heap === 'string' ? String(snap.heap) : 'heap=null';
+		return `inUse=${h.inUse}MB maxFootprint=${h.maxFootprint}MB sbrkTop=${h.sbrkTop}MB reserved=${h.reserved}MB stack=${h.stack}MB`;
+	};
+	const imeLine = (): string => {
+		try {
+			const input = document.querySelector<HTMLInputElement>(
+				'.qt-window-input-element',
+			);
+			const vv = window.visualViewport;
+			const kb =
+				!!vv && window.innerHeight - vv.height * vv.scale > 120;
+			return `kb=${kb} inputMode=${input?.inputMode ?? '?'} type=${input?.type ?? '?'} active=${document.activeElement?.nodeName ?? '?'}`;
+		} catch {
+			return 'ime=?';
+		}
+	};
 	/** Heap snapshot + the engine's qtclient-fs Worker counters. */
 	const logHeapAndFs = async (label: string) => {
 		const snap = wasmHeapSnap();
@@ -795,6 +814,7 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 		bag.defer(() => window.clearInterval(timer));
 	};
 	bag.listen(window, 'error', ((ev: ErrorEvent) => {
+		const snap = wasmHeapSnap();
 		reportBrowserCrash({
 			name: ev.error instanceof Error ? ev.error.name : 'Error',
 			message: ev.message || 'window.onerror',
@@ -804,16 +824,20 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 					: `${ev.filename}:${ev.lineno}:${ev.colno}`,
 			stage: 'window.onerror',
 			revision: callbacks.revision,
-			extra: { engine: wasmName },
+			extra: { engine: wasmName, ...snap },
 		});
-		diagWarn('window.onerror', {
-			message: ev.message,
-			source: ev.filename,
-			line: ev.lineno,
-			col: ev.colno,
-			stack: ev.error instanceof Error ? ev.error.stack?.slice(0, 2500) : null,
-			...wasmHeapSnap(),
-		});
+		diagWarn(
+			`window.onerror: ${ev.message || '?'} | ${heapLine(snap)} | ${imeLine()}`,
+			{
+				message: ev.message,
+				source: ev.filename,
+				line: ev.lineno,
+				col: ev.colno,
+				stack: ev.error instanceof Error ? ev.error.stack?.slice(0, 2500) : null,
+				...snap,
+			},
+			{ flush: true },
+		);
 	}) as EventListener);
 	bag.listen(window, 'unhandledrejection', ((ev: PromiseRejectionEvent) => {
 		const reason: unknown = ev.reason;
@@ -1036,26 +1060,33 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 					(instance as { onAbort?: (r: unknown) => void }).onAbort = (
 						reason,
 					) => {
+						const snap = wasmHeapSnap();
+						const reasonText =
+							reason instanceof Error ? reason.message : String(reason);
 						reportBrowserCrash({
 							name: 'WasmAbort',
-							message:
-								reason instanceof Error ? reason.message : String(reason),
+							message: reasonText,
 							stack:
 								reason instanceof Error
 									? reason.stack
 									: new Error(String(reason)).stack,
 							stage: 'wasm.onAbort',
 							revision: callbacks.revision,
-							extra: { engine: wasmName, ...wasmHeapSnap() },
+							extra: { engine: wasmName, ...snap },
 						});
-						diagWarn('wasm onAbort', {
-							reason: reason instanceof Error ? reason.message : String(reason),
-							stack:
-								reason instanceof Error
-									? reason.stack?.slice(0, 3500)
-									: new Error(String(reason)).stack?.slice(0, 3500),
-							...wasmHeapSnap(),
-						});
+						// Numbers in the message: Safari collapses nested data objects.
+						diagWarn(
+							`wasm onAbort: ${heapLine(snap)} | ${imeLine()} | reason=${reasonText || '(empty)'}`,
+							{
+								reason: reasonText,
+								stack:
+									reason instanceof Error
+										? reason.stack?.slice(0, 3500)
+										: new Error(String(reason)).stack?.slice(0, 3500),
+								...snap,
+							},
+							{ flush: true },
+						);
 						try {
 							prevAbort?.(reason);
 						} catch {
@@ -1083,13 +1114,18 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 									revision: callbacks.revision,
 									extra: { engine: wasmName, ...wasmHeapSnap() },
 								});
-								diagWarn('callMain throw', {
-									name: err instanceof Error ? err.name : null,
-									message: err instanceof Error ? err.message : String(err),
-									stack:
-										err instanceof Error ? err.stack?.slice(0, 3500) : null,
-									...wasmHeapSnap(),
-								});
+								const snap = wasmHeapSnap();
+								diagWarn(
+									`callMain throw: ${heapLine(snap)} | ${imeLine()}`,
+									{
+										name: err instanceof Error ? err.name : null,
+										message: err instanceof Error ? err.message : String(err),
+										stack:
+											err instanceof Error ? err.stack?.slice(0, 3500) : null,
+										...snap,
+									},
+									{ flush: true },
+								);
 								throw err;
 							}
 						};
@@ -1161,12 +1197,17 @@ export function bootTibia(callbacks: TibiaBootOptions): TibiaBootHandle {
 						callbacks.onReady?.();
 					},
 					onExit: (exit) => {
-						diagWarn('qt onExit', {
-							code: exit.code,
-							crashed: exit.crashed,
-							text: exit.text,
-							...wasmHeapSnap(),
-						});
+						const snap = wasmHeapSnap();
+						diagWarn(
+							`qt onExit crashed=${!!exit.crashed} code=${exit.code ?? '?'} | ${heapLine(snap)} | ${imeLine()}`,
+							{
+								code: exit.code,
+								crashed: exit.crashed,
+								text: exit.text,
+								...snap,
+							},
+							{ flush: true },
+						);
 						const msg = exit.crashed
 							? crashText(exit.text)
 							: `Application exit${exit.code !== undefined ? ` (${exit.code})` : ''}`;

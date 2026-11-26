@@ -14,8 +14,7 @@ the XDG path under the wasm HOME.
 
 `<dir>` is the tip's `directoryname` (CipSoft `Tibia`, IdleOT `IdleOT`); the
 launcher adds `.app` on macOS only. Inside each package the client follows
-CipSoft's layout for that OS (`docs/reverse-engineering/cip-package-layout.md`
-in the monorepo): `bin/` + `assets/` + `sounds/` on Linux, Windows and the
+CipSoft's layout for that OS: `bin/` + `assets/` + `sounds/` on Linux, Windows and the
 browser package; `Contents/MacOS/` + `Contents/Resources/` on macOS. The
 client finds its Resources from its own location (CipSoft's
 `applicationDirPath/..` plus `Resources` when present), so nothing here or in
