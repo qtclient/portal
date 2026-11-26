@@ -1,35 +1,30 @@
 /**
- * iOS Safari only raises the keyboard for focus() made on the user-gesture
- * call stack. Qt wasm + JSPI queues pointerdown and runs C++ (including
- * QWasmInputContext::updateInputElement → input.focus()) after dispatch —
- * too late: Safari flashes the accessory/URL chrome and shows no keyboard.
+ * Reliable iOS Safari keyboard for Qt wasm text fields.
  *
- * Root cause fix: during the tap itself, re-focus the window's IME input when
- * Qt already configured it for text (inputMode !== "none"). Login fields get
- * activeFocus on show, so the element already has a real inputMode/type; we
- * only need the focus() call to happen in-gesture.
+ * Qt wasm + JSPI focuses the 1px `.qt-window-input-element` after pointer
+ * dispatch — too late for Safari. Canvas pointer defaults also move DOM focus
+ * to <body>, so the keyboard flashes and keystrokes never land.
  *
- * Do NOT prime with inputmode="none": that replaces Qt's real mode, Safari
- * never opens a keyboard for "none", and a later inputMode change outside the
- * gesture does not upgrade the session (URL bar bounce, no keys).
+ * Logs (v1.0.228) showed every tap as:
+ *   focus → prime → blur(body) → focus → kb up → blur(body) ~700ms → kb down
+ * and `input.type` text↔password (email echoMode / password field) applied on
+ * blur while the keyboard was still up, which dismisses the session.
  *
- * Changing input.type while focused also dismisses the iOS keyboard; defer
- * type writes on the IME element until it blurs.
+ * Hold a session: preventDefault on the priming pointerdown (stop body steal,
+ * still let Qt see the event), focus without blur-first, re-focus on blur while
+ * Qt still wants text (inputMode !== "none"), and defer type writes until the
+ * keyboard is gone.
  *
- * Separately: Qt's wasm platform calls releasePointerCapture on pointerup
- * without checking hasPointerCapture. Safari often releases capture itself
- * when the keyboard opens / the touch ends, so the call throws NotFoundError,
- * the exception escapes Qt's event handler, and the WASM instance dies.
- * installSafePointerCapture mirrors the stock Qt hasPointerCapture guard
- * until the next qtclient/Qt5 kit pin.
+ * Next/Go: one shared HTML input serves every QML field. enterkeyhint starts
+ * as "next"; Enter synthesizes Tab into the qt-window (KeyNavigation), then
+ * flips the hint to "go". A later Enter is a real Enter (login submit).
  *
- * Diag breadcrumbs (`ime.*`, `pointerCapture.*`) go through play.diag so the
- * next Safari boot can dump what happened before a kill/reload.
+ * Also: Qt releasePointerCapture NotFoundError → WASM abort; guard it.
  */
 
 import { diag, diagFlush, diagWarn } from './play-diag';
 
-type QtWindowParts = { input: HTMLInputElement; helper: HTMLElement };
+type QtWindowParts = { input: HTMLInputElement; helper: HTMLElement; window: HTMLElement };
 
 function qtWindowParts(event: Event): QtWindowParts | null {
 	for (const node of event.composedPath()) {
@@ -41,7 +36,7 @@ function qtWindowParts(event: Event): QtWindowParts | null {
 		const helper = node.querySelector<HTMLElement>(
 			':scope > .qt-window-focus-helper',
 		);
-		return input && helper ? { input, helper } : null;
+		return input && helper ? { input, helper, window: node } : null;
 	}
 	return null;
 }
@@ -80,6 +75,7 @@ function imeSnapshot(input?: HTMLInputElement | null): Record<string, unknown> {
 				: active?.nodeName ?? null,
 		inputMode: el?.inputMode ?? null,
 		type: el?.type ?? null,
+		enterKeyHint: el?.enterKeyHint || null,
 		focused: !!(el && deepActiveElement() === el),
 	};
 }
@@ -87,15 +83,17 @@ function imeSnapshot(input?: HTMLInputElement | null): Record<string, unknown> {
 const guardedInputs = new WeakSet<HTMLInputElement>();
 const observedInputs = new WeakSet<HTMLInputElement>();
 
-/** Rate-limit chatty breadcrumbs so a drag/flick does not flood sessionStorage. */
-function rateLimited(
-	key: string,
-	minMs: number,
-	fn: () => void,
-): void {
-	const g = globalThis as unknown as {
-		__qtImeDiagAt?: Record<string, number>;
-	};
+/** Active IME hold: re-focus on blur until Qt sets inputMode=none. */
+let holdInput: HTMLInputElement | null = null;
+let holdWindow: HTMLElement | null = null;
+/** "next" → Tab into the next QML field; "go" → real Enter (submit). */
+let enterStep: 'next' | 'go' = 'next';
+let reentering = false;
+let pendingType: string | null = null;
+let typeDesc: PropertyDescriptor | null = null;
+
+function rateLimited(key: string, minMs: number, fn: () => void): void {
+	const g = globalThis as unknown as { __qtImeDiagAt?: Record<string, number> };
 	const stamp = (g.__qtImeDiagAt ??= {});
 	const now = performance.now();
 	if ((stamp[key] ?? 0) + minMs > now) return;
@@ -103,9 +101,54 @@ function rateLimited(
 	fn();
 }
 
+function applyPendingType(input: HTMLInputElement | null, reason: string): void {
+	if (pendingType === null || !typeDesc?.set || !input) return;
+	if (keyboardShown() && deepActiveElement() === input) return;
+	const next = pendingType;
+	pendingType = null;
+	diag('ime.type apply', { to: next, reason, ...imeSnapshot(input) });
+	typeDesc.set.call(input, next);
+}
+
+function endHold(reason: string): void {
+	if (!holdInput && !holdWindow) return;
+	const input = holdInput;
+	diag('ime.hold end', { reason, ...imeSnapshot(input) });
+	holdInput = null;
+	holdWindow = null;
+	enterStep = 'next';
+	// Keyboard must be down before type flips; viewport handler will retry if not.
+	if (!keyboardShown()) applyPendingType(input, 'hold-end');
+}
+
+function beginHold(parts: QtWindowParts): void {
+	holdInput = parts.input;
+	holdWindow = parts.window;
+	syncEnterKeyHint(parts.input);
+	diagFlush('ime.hold begin', {
+		enterStep,
+		...imeSnapshot(parts.input),
+	});
+}
+
+function syncEnterKeyHint(input: HTMLInputElement): void {
+	const hint = enterStep === 'go' ? 'go' : 'next';
+	const autocomplete = enterStep === 'go' ? 'current-password' : 'username';
+	let changed = false;
+	if (input.enterKeyHint !== hint) {
+		input.enterKeyHint = hint;
+		changed = true;
+	}
+	if (input.autocomplete !== autocomplete) {
+		input.autocomplete = autocomplete;
+		changed = true;
+	}
+	if (changed) diag('ime.enterKeyHint', { hint, autocomplete, ...imeSnapshot(input) });
+}
+
 /**
- * iOS drops the keyboard when a focused <input>'s type changes (e.g. Qt
- * flipping text ↔ password for echoMode). Queue the write until blur.
+ * iOS drops the keyboard when a focused <input>'s type changes. Keep the
+ * write queued until the hold ends and the keyboard is down.
  */
 function guardInputTypeWhileFocused(input: HTMLInputElement): void {
 	if (guardedInputs.has(input)) return;
@@ -115,44 +158,57 @@ function guardInputTypeWhileFocused(input: HTMLInputElement): void {
 		Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'type') ??
 		Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'type');
 	if (!desc?.get || !desc?.set) return;
+	typeDesc = desc;
 
-	let pending: string | null = null;
 	Object.defineProperty(input, 'type', {
 		configurable: true,
 		enumerable: desc.enumerable ?? true,
 		get() {
-			return pending ?? desc.get!.call(this);
+			return pendingType ?? desc.get!.call(this);
 		},
 		set(value: string) {
 			const next = String(value);
-			if (deepActiveElement() === this && desc.get!.call(this) !== next) {
-				pending = next;
+			const current = pendingType ?? String(desc.get!.call(this));
+			if (current === next) return;
+			const holding =
+				holdInput === this &&
+				(deepActiveElement() === this || keyboardShown());
+			if (holding) {
+				pendingType = next;
 				diag('ime.type deferred', {
-					from: desc.get!.call(this),
+					from: String(desc.get!.call(this)),
 					to: next,
 					...imeSnapshot(input),
 				});
 				return;
 			}
-			if (desc.get!.call(this) !== next) {
-				diag('ime.type set', {
-					from: desc.get!.call(this),
-					to: next,
-					focused: deepActiveElement() === this,
-					...imeSnapshot(input),
-				});
-			}
-			pending = null;
+			pendingType = null;
+			diag('ime.type set', {
+				from: String(desc.get!.call(this)),
+				to: next,
+				...imeSnapshot(input),
+			});
 			desc.set!.call(this, next);
 		},
 	});
-	input.addEventListener('blur', () => {
-		if (pending === null) return;
-		const next = pending;
-		pending = null;
-		diag('ime.type apply-on-blur', { to: next, ...imeSnapshot(input) });
-		desc.set!.call(input, next);
-	});
+}
+
+function dispatchQtKey(
+	qtWindow: HTMLElement,
+	key: string,
+	code: string,
+	keyCode: number,
+): void {
+	const init: KeyboardEventInit = {
+		key,
+		code,
+		keyCode,
+		which: keyCode,
+		bubbles: true,
+		cancelable: true,
+	};
+	qtWindow.dispatchEvent(new KeyboardEvent('keydown', init));
+	qtWindow.dispatchEvent(new KeyboardEvent('keyup', init));
 }
 
 function observeImeInput(input: HTMLInputElement): void {
@@ -160,21 +216,68 @@ function observeImeInput(input: HTMLInputElement): void {
 	observedInputs.add(input);
 	guardInputTypeWhileFocused(input);
 
-	const onFocus = () =>
+	input.addEventListener('focus', () => {
 		diag('ime.focus', imeSnapshot(input), { flush: true });
-	const onBlur = () => diag('ime.blur', imeSnapshot(input), { flush: true });
-	input.addEventListener('focus', onFocus);
-	input.addEventListener('blur', onBlur);
-	// inputMode changes (Qt switching helper ↔ text field) are a common
-	// keyboard-kill signal on iOS.
+		if (holdInput === input) syncEnterKeyHint(input);
+	});
+
+	input.addEventListener('blur', () => {
+		diag('ime.blur', imeSnapshot(input), { flush: true });
+		if (reentering) return;
+		// Qt released the field — allow the blur.
+		if ((input.inputMode || 'text') === 'none') {
+			endHold('inputMode-none');
+			return;
+		}
+		// Still an IME field: Safari/canvas stole focus. Take it back.
+		if (holdInput === input) {
+			reentering = true;
+			try {
+				input.focus({ preventScroll: true });
+				diag('ime.hold refocus', imeSnapshot(input), { flush: true });
+			} finally {
+				reentering = false;
+			}
+			return;
+		}
+		applyPendingType(input, 'blur');
+	});
+
+	input.addEventListener('keydown', (event) => {
+		if (event.key !== 'Enter' && event.key !== 'Go') return;
+		const qtWindow =
+			holdWindow ??
+			input.closest<HTMLElement>('.qt-window') ??
+			document.querySelector<HTMLElement>('.qt-window');
+		if (!qtWindow) return;
+
+		event.preventDefault();
+		event.stopPropagation();
+
+		if (enterStep === 'next') {
+			enterStep = 'go';
+			syncEnterKeyHint(input);
+			diagFlush('ime.next → Tab', imeSnapshot(input));
+			dispatchQtKey(qtWindow, 'Tab', 'Tab', 9);
+			// Keep the HTML focus; Qt will retarget the IME to the next field.
+			queueMicrotask(() => {
+				if (holdInput === input && (input.inputMode || 'text') !== 'none')
+					input.focus({ preventScroll: true });
+			});
+			return;
+		}
+
+		diagFlush('ime.go → Enter', imeSnapshot(input));
+		dispatchQtKey(qtWindow, 'Enter', 'Enter', 13);
+	});
+
 	const mo = new MutationObserver((records) => {
 		for (const r of records) {
-			if (r.type === 'attributes' && r.attributeName === 'inputmode') {
-				diag('ime.inputMode', {
-					value: input.inputMode || 'text',
-					...imeSnapshot(input),
-				});
-			}
+			if (r.type !== 'attributes' || r.attributeName !== 'inputmode') continue;
+			const mode = input.inputMode || 'text';
+			diag('ime.inputMode', { value: mode, ...imeSnapshot(input) });
+			if (mode === 'none') endHold('inputMode-attr-none');
+			else if (holdInput === input) syncEnterKeyHint(input);
 		}
 	});
 	mo.observe(input, { attributes: true, attributeFilter: ['inputmode'] });
@@ -227,7 +330,10 @@ export function installSafePointerCapture(): () => void {
 			}
 			diagWarn('pointerCapture.release threw', {
 				pointerId,
-				err: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+				err:
+					error instanceof Error
+						? `${error.name}: ${error.message}`
+						: String(error),
 				...imeSnapshot(),
 			});
 			throw error;
@@ -246,11 +352,11 @@ type ElementPrototypeWithMarker = typeof Element.prototype & {
 };
 
 export function installTouchKeyboardPriming(screen: HTMLElement): () => void {
-	let lastPrimeAt = 0;
 	const onPointerDown = (event: PointerEvent) => {
 		if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
 		const parts = qtWindowParts(event);
 		if (!parts) {
+			if (holdInput) endHold('pointer-outside-qt');
 			rateLimited('prime-no-qt', 5_000, () =>
 				diag('ime.prime skip', {
 					reason: 'no-qt-window',
@@ -262,67 +368,69 @@ export function installTouchKeyboardPriming(screen: HTMLElement): () => void {
 
 		observeImeInput(parts.input);
 
-		const shown = keyboardShown();
 		const mode = parts.input.inputMode || 'text';
-		const alreadyFocused = deepActiveElement() === parts.input;
-		const snap = {
-			pointerType: event.pointerType,
-			mode,
-			alreadyFocused,
-			shown,
-			...imeSnapshot(parts.input),
-		};
-
-		if (shown) {
-			rateLimited('prime-shown', 2_000, () =>
-				diag('ime.prime skip', { reason: 'keyboard-shown', ...snap }),
+		if (mode === 'none') {
+			if (holdInput) endHold('pointer-inputMode-none');
+			rateLimited('prime-none', 3_000, () =>
+				diag('ime.prime skip', {
+					reason: 'inputMode-none',
+					pointerType: event.pointerType,
+					...imeSnapshot(parts.input),
+				}),
 			);
 			return;
 		}
-		// Qt has not asked for text input yet (focus helper owns the window).
-		// Do not invent a session — a blind focus() opens the keyboard on every
-		// map tap. Login forceActiveFocus configures inputMode before the tap.
-		if (mode === 'none') {
-			// Login taps that land while inputMode is still "none" are the
-			// interesting case — always log those, rate-limit map noise.
-			const interesting =
-				event.target instanceof Element &&
-				!event.target.closest?.('canvas');
-			if (interesting) {
-				diag('ime.prime skip', { reason: 'inputMode-none', ...snap });
-			} else {
-				rateLimited('prime-none', 3_000, () =>
-					diag('ime.prime skip', { reason: 'inputMode-none', ...snap }),
-				);
-			}
-			return;
-		}
 
-		// Already focused from Qt's late focus() (no keyboard): blur+focus inside
-		// the gesture starts a real Safari input session.
-		if (alreadyFocused) parts.input.blur();
+		// Stop the browser default that moves focus to <body>/canvas. Do not
+		// stopPropagation — Qt still needs the pointer to activate the QML field.
+		event.preventDefault();
+
+		// Never blur-first: that was killing the Safari session on every tap.
 		parts.input.focus({ preventScroll: true });
-		const now = performance.now();
-		const gap = lastPrimeAt ? Math.round(now - lastPrimeAt) : null;
-		lastPrimeAt = now;
+		const continuing = holdInput === parts.input && keyboardShown();
+		if (!continuing) enterStep = 'next';
+		beginHold(parts);
+
 		diagFlush('ime.prime', {
-			...snap,
-			didBlurFirst: alreadyFocused,
+			pointerType: event.pointerType,
+			mode,
+			enterStep,
+			continuing,
 			afterFocused: deepActiveElement() === parts.input,
-			gapMs: gap,
+			...imeSnapshot(parts.input),
 		});
 	};
 
-	const onViewport = () => {
-		rateLimited('viewport', 500, () => diag('ime.viewport', imeSnapshot()));
+	const onPointerUp = (event: PointerEvent) => {
+		if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+		if (!holdInput || (holdInput.inputMode || 'text') === 'none') return;
+		// Late Qt/canvas work often steals focus on pointerup; reclaim in-gesture.
+		if (deepActiveElement() !== holdInput) {
+			holdInput.focus({ preventScroll: true });
+			diag('ime.hold pointerup-refocus', imeSnapshot(holdInput));
+		}
 	};
 
-	// Capture: still on the user-gesture stack, before Qt's queued handler.
+	const onViewport = () => {
+		rateLimited('viewport', 500, () => {
+			diag('ime.viewport', imeSnapshot(holdInput));
+			if (!keyboardShown()) {
+				const input =
+					holdInput ??
+					document.querySelector<HTMLInputElement>(
+						'.qt-window-input-element',
+					);
+				applyPendingType(input, 'viewport-kb-down');
+			}
+		});
+	};
+
 	screen.addEventListener('pointerdown', onPointerDown, true);
+	screen.addEventListener('pointerup', onPointerUp, true);
+	screen.addEventListener('pointercancel', onPointerUp, true);
 	window.visualViewport?.addEventListener('resize', onViewport);
 	window.visualViewport?.addEventListener('scroll', onViewport);
 
-	// Catch Qt creating/replacing the IME input after boot.
 	const mo = new MutationObserver(() => {
 		for (const input of document.querySelectorAll<HTMLInputElement>(
 			'.qt-window-input-element',
@@ -341,8 +449,11 @@ export function installTouchKeyboardPriming(screen: HTMLElement): () => void {
 
 	return () => {
 		screen.removeEventListener('pointerdown', onPointerDown, true);
+		screen.removeEventListener('pointerup', onPointerUp, true);
+		screen.removeEventListener('pointercancel', onPointerUp, true);
 		window.visualViewport?.removeEventListener('resize', onViewport);
 		window.visualViewport?.removeEventListener('scroll', onViewport);
 		mo.disconnect();
+		endHold('uninstall');
 	};
 };
