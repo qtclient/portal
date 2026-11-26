@@ -9,10 +9,12 @@
  * gesture → element focused, keyboard gone. A drag keeps the gesture alive
  * until release, so the session sticks.
  *
- * Fix: when Qt wants text (inputMode !== "none"), enlarge that input into a
- * real opacity-0.01 hit target over the field, lock the focus helper, and let
- * the finger hit the actual <input>. Native Safari keyboard; no canvas steal.
- * Canvas taps outside that hit target (Login, etc.) are left alone.
+ * Fix: on a field-targeted user gesture, enlarge that input into a real
+ * opacity-0.01 hit target over Qt's inputItemRectangle origin, lock the focus
+ * helper, and focus on pointerup (still a user gesture). Do NOT expand/hold on
+ * mere Qt focus — that left a floating overlay and flashed the keyboard on
+ * expedition / chrome taps. Outside the field hit target: tear down and move
+ * focus to the helper so Login / lists are not fighting the IME.
  *
  * Next/Go: enterkeyhint next → Tab (KeyNavigation), then go → Enter (login).
  * Never set autocomplete — Safari password AutoFill remounts /play.
@@ -119,15 +121,49 @@ function applyPendingType(input: HTMLInputElement | null, reason: string): void 
 	typeDesc.set.call(input, next);
 }
 
+/** Assumed QML field size from Qt's 1×1 inputItemRectangle origin. */
+const FIELD_HIT_W = 280;
+const FIELD_HIT_H = 44;
+const FIELD_HIT_PAD = 10;
+
+function fieldHitSize(): { w: number; h: number } {
+	return {
+		w: Math.min(FIELD_HIT_W, Math.max(160, window.innerWidth - 24)),
+		h: FIELD_HIT_H,
+	};
+}
+
+/** Hit rect covering the QML field even while Qt still forces 1×1. */
+function fieldHitRect(input: HTMLInputElement): DOMRect {
+	const r = input.getBoundingClientRect();
+	const { w, h } = fieldHitSize();
+	if (r.width >= 8 && r.height >= 8) {
+		return new DOMRect(
+			r.left - FIELD_HIT_PAD,
+			r.top - FIELD_HIT_PAD,
+			r.width + FIELD_HIT_PAD * 2,
+			r.height + FIELD_HIT_PAD * 2,
+		);
+	}
+	return new DOMRect(
+		r.left - FIELD_HIT_PAD,
+		r.top - FIELD_HIT_PAD,
+		w + FIELD_HIT_PAD * 2,
+		h + FIELD_HIT_PAD * 2,
+	);
+}
+
 /** Put a real finger-sized hit target over the QML field (Qt leaves 1×1 @ -2). */
 function expandInput(input: HTMLInputElement): void {
 	const style = input.style;
+	const { w, h } = fieldHitSize();
+	// Concrete px — iOS Safari is flaky with min()/calc() via setProperty.
 	style.setProperty('opacity', '0.01', 'important');
 	style.setProperty('z-index', '1000', 'important');
 	style.setProperty('pointer-events', 'auto', 'important');
 	style.setProperty('font-size', '16px', 'important'); // no Safari zoom
-	style.setProperty('height', '44px', 'important');
-	style.setProperty('width', 'min(320px, calc(100vw - 24px))', 'important');
+	style.setProperty('height', `${h}px`, 'important');
+	style.setProperty('width', `${w}px`, 'important');
 	style.setProperty('border', '0', 'important');
 	style.setProperty('padding', '0', 'important');
 	style.setProperty('margin', '0', 'important');
@@ -135,9 +171,11 @@ function expandInput(input: HTMLInputElement): void {
 	style.setProperty('color', 'transparent', 'important');
 	style.setProperty('caret-color', 'transparent', 'important');
 	input.setAttribute('contenteditable', 'false');
+	const box = input.getBoundingClientRect();
+	const boxStr = `${Math.round(box.width)}x${Math.round(box.height)}@${Math.round(box.left)},${Math.round(box.top)}`;
 	if (!expandedInputs.has(input)) {
 		expandedInputs.add(input);
-		diag('ime.expand', imeSnapshot(input));
+		diag(`ime.expand ${boxStr}`, imeSnapshot(input));
 	}
 }
 
@@ -166,6 +204,14 @@ function shrinkInput(input: HTMLInputElement): void {
 	style.height = '1px';
 	input.setAttribute('contenteditable', 'true');
 	expandedInputs.delete(input);
+}
+
+function wantOverlay(input: HTMLInputElement): boolean {
+	return (
+		holdInput === input ||
+		pendingWake?.input === input ||
+		(keyboardShown() && deepActiveElement() === input)
+	);
 }
 
 function lockHelper(helper: HTMLElement): void {
@@ -221,8 +267,7 @@ function syncEnterKeyHint(input: HTMLInputElement): void {
 
 function tapHitsInput(event: PointerEvent, input: HTMLInputElement): boolean {
 	if (event.composedPath().includes(input)) return true;
-	const r = input.getBoundingClientRect();
-	if (r.width < 8 || r.height < 8) return false;
+	const r = fieldHitRect(input);
 	return (
 		event.clientX >= r.left &&
 		event.clientX <= r.right &&
@@ -296,11 +341,18 @@ function observeImeInput(input: HTMLInputElement): void {
 	input.addEventListener('focus', () => {
 		diag('ime.focus', imeSnapshot(input), { flush: true });
 		const parts = partsForInput(input);
-		if ((input.inputMode || 'text') !== 'none' && parts) {
+		if ((input.inputMode || 'text') === 'none' || !parts) return;
+		// Only keep/expand an overlay from a user gesture or live keyboard —
+		// Qt also focuses this element for transient chrome (char select,
+		// chat) and expanding then flashed the keyboard on later taps.
+		if (wantOverlay(input)) {
 			expandInput(input);
 			lockHelper(parts.helper);
-			if (!holdInput) beginHold(parts);
-			else syncEnterKeyHint(input);
+			if (holdInput === input) syncEnterKeyHint(input);
+			else if (pendingWake?.input === input || keyboardShown())
+				beginHold(parts);
+		} else if (holdInput !== input) {
+			syncEnterKeyHint(input);
 		}
 	});
 
@@ -370,15 +422,21 @@ function observeImeInput(input: HTMLInputElement): void {
 			if (r.attributeName === 'inputmode') {
 				const mode = input.inputMode || 'text';
 				diag('ime.inputMode', { value: mode, ...imeSnapshot(input) });
-				const parts = partsForInput(input);
 				if (mode === 'none') endHold('inputMode-attr-none');
-				else if (parts) {
-					expandInput(input);
-					lockHelper(parts.helper);
-					if (holdInput === input) syncEnterKeyHint(input);
+				else if (wantOverlay(input)) {
+					const parts = partsForInput(input);
+					if (parts) {
+						expandInput(input);
+						lockHelper(parts.helper);
+						if (holdInput === input) syncEnterKeyHint(input);
+					}
 				}
 			}
-			if (r.attributeName === 'style' && (input.inputMode || 'text') !== 'none') {
+			if (
+				r.attributeName === 'style' &&
+				wantOverlay(input) &&
+				(input.inputMode || 'text') !== 'none'
+			) {
 				// Qt updateGeometry resets 1×1 — put the hit target back.
 				expandInput(input);
 			}
@@ -468,20 +526,37 @@ export function installTouchKeyboardPriming(screen: HTMLElement): () => void {
 		if (keyboardShown()) {
 			pendingWake = null;
 			rateLimited('prime-kb', 2_000, () =>
-				diag('ime.prime skip', { reason: 'keyboard-shown', ...imeSnapshot(parts.input) }),
+				diag('ime.prime skip', {
+					reason: 'keyboard-shown',
+					...imeSnapshot(parts.input),
+				}),
 			);
 			return;
 		}
 
-		expandInput(parts.input);
-		lockHelper(parts.helper);
-
+		const hit = fieldHitRect(parts.input);
 		const onField = tapHitsInput(event, parts.input);
 		if (!onField) {
-			// Canvas tap outside the field hit target (e.g. Login) — do not steal.
+			// Login / expedition / chrome: drop any stale IME overlay so the
+			// next Qt focus cannot flash the keyboard on a non-field tap.
 			pendingWake = null;
+			const hadIme =
+				holdInput === parts.input ||
+				deepActiveElement() === parts.input ||
+				expandedInputs.has(parts.input);
+			if (hadIme) {
+				endHold('outside-field');
+				try {
+					parts.helper.focus({ preventScroll: true });
+				} catch {
+					/* ignore */
+				}
+			}
 			diag('ime.prime skip', {
 				reason: 'outside-field',
+				hit: `${Math.round(hit.width)}x${Math.round(hit.height)}@${Math.round(hit.left)},${Math.round(hit.top)}`,
+				tap: `${Math.round(event.clientX)},${Math.round(event.clientY)}`,
+				cleared: hadIme,
 				...imeSnapshot(parts.input),
 			});
 			return;
@@ -500,6 +575,8 @@ export function installTouchKeyboardPriming(screen: HTMLElement): () => void {
 			pointerType: event.pointerType,
 			path: 'canvas-field',
 			enterStep,
+			hit: `${Math.round(hit.width)}x${Math.round(hit.height)}@${Math.round(hit.left)},${Math.round(hit.top)}`,
+			tap: `${Math.round(event.clientX)},${Math.round(event.clientY)}`,
 			...imeSnapshot(parts.input),
 		});
 	};
@@ -552,7 +629,7 @@ export function installTouchKeyboardPriming(screen: HTMLElement): () => void {
 			'.qt-window-input-element',
 		)) {
 			observeImeInput(input);
-			if ((input.inputMode || 'text') !== 'none') {
+			if (wantOverlay(input) && (input.inputMode || 'text') !== 'none') {
 				const parts = partsForInput(input);
 				if (parts) {
 					expandInput(input);
